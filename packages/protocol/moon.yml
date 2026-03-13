@@ -2,11 +2,11 @@ language: javascript
 
 tasks:
   build:
-    command: tsc -p tsconfig.json
+    command: pnpm exec tsc -p tsconfig.json
     inputs:
       - "src/**/*"
       - "tsconfig.json"
   test:
-    command: vitest run
+    command: pnpm exec vitest run --passWithNoTests
   lint:
-    command: tsc --noEmit
+    command: pnpm exec tsc --noEmit
