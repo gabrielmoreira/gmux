@@ -1,0 +1,12 @@
+language: javascript
+
+tasks:
+  build:
+    command: tsc -p tsconfig.json
+    inputs:
+      - "src/**/*"
+      - "tsconfig.json"
+  test:
+    command: vitest run
+  lint:
+    command: tsc --noEmit
