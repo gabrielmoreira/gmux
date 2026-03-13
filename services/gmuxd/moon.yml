@@ -1,0 +1,14 @@
+language: bash
+
+tasks:
+  dev:
+    command: go run ./cmd/gmuxd
+  build:
+    command: go build ./cmd/gmuxd
+    inputs:
+      - "cmd/**/*"
+      - "go.mod"
+  test:
+    command: go test ./...
+  lint:
+    command: go test ./...
