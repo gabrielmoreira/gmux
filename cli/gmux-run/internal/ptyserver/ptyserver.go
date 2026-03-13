@@ -15,8 +15,11 @@ import (
 	"syscall"
 
 	"github.com/creack/pty"
+	"github.com/gmuxapp/gmux/cli/gmux-run/internal/ringbuf"
 	"nhooyr.io/websocket"
 )
+
+const defaultScrollbackSize = 128 * 1024 // 128KB
 
 // ResizeMsg is the JSON message clients send to resize the terminal.
 type ResizeMsg struct {
@@ -27,10 +30,11 @@ type ResizeMsg struct {
 
 // Server holds a PTY and serves WebSocket connections.
 type Server struct {
-	cmd      *exec.Cmd
-	ptmx     *os.File
-	sockPath string
-	listener net.Listener
+	cmd        *exec.Cmd
+	ptmx       *os.File
+	sockPath   string
+	listener   net.Listener
+	scrollback *ringbuf.RingBuf
 
 	mu      sync.Mutex
 	clients map[*wsClient]struct{}
@@ -48,12 +52,13 @@ type wsClient struct {
 
 // Config for creating a new PTY server.
 type Config struct {
-	Command    []string
-	Cwd        string
-	Env        []string
-	SocketPath string
-	Cols       uint16
-	Rows       uint16
+	Command        []string
+	Cwd            string
+	Env            []string
+	SocketPath     string
+	Cols           uint16
+	Rows           uint16
+	ScrollbackSize int // bytes, 0 = default (128KB)
 }
 
 // New creates and starts a PTY server.
@@ -66,6 +71,10 @@ func New(cfg Config) (*Server, error) {
 	}
 	if cfg.Rows == 0 {
 		cfg.Rows = 25
+	}
+	scrollbackSize := cfg.ScrollbackSize
+	if scrollbackSize <= 0 {
+		scrollbackSize = defaultScrollbackSize
 	}
 
 	cmd := exec.Command(cfg.Command[0], cfg.Command[1:]...)
@@ -93,21 +102,17 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	s := &Server{
-		cmd:      cmd,
-		ptmx:     ptmx,
-		sockPath: cfg.SocketPath,
-		listener: listener,
-		clients:  make(map[*wsClient]struct{}),
-		done:     make(chan struct{}),
+		cmd:        cmd,
+		ptmx:       ptmx,
+		sockPath:   cfg.SocketPath,
+		listener:   listener,
+		scrollback: ringbuf.New(scrollbackSize),
+		clients:    make(map[*wsClient]struct{}),
+		done:       make(chan struct{}),
 	}
 
-	// Read PTY output and broadcast to clients
 	go s.readPTY()
-
-	// Wait for child process to exit
 	go s.waitChild()
-
-	// Serve HTTP/WebSocket on Unix socket
 	go s.serve()
 
 	return s, nil
@@ -180,9 +185,25 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		cancel: cancel,
 	}
 
+	// Replay scrollback before adding to live clients.
+	// This is done under the lock to ensure no output is missed between
+	// snapshot and registration — the client sees the full history plus
+	// all subsequent live data with no gap.
 	s.mu.Lock()
+	snapshot := s.scrollback.Snapshot()
 	s.clients[client] = struct{}{}
 	s.mu.Unlock()
+
+	if len(snapshot) > 0 {
+		if err := conn.Write(ctx, websocket.MessageBinary, snapshot); err != nil {
+			s.mu.Lock()
+			delete(s.clients, client)
+			s.mu.Unlock()
+			conn.Close(websocket.StatusNormalClosure, "")
+			cancel()
+			return
+		}
+	}
 
 	defer func() {
 		s.mu.Lock()
@@ -232,27 +253,24 @@ func (s *Server) readPTY() {
 	for {
 		n, err := s.ptmx.Read(buf)
 		if n > 0 {
-			s.broadcast(buf[:n])
+			data := buf[:n]
+			// Store in scrollback (under lock with broadcast to avoid gaps)
+			s.mu.Lock()
+			s.scrollback.Write(data)
+			clients := make([]*wsClient, 0, len(s.clients))
+			for c := range s.clients {
+				clients = append(clients, c)
+			}
+			s.mu.Unlock()
+
+			for _, c := range clients {
+				if err := c.conn.Write(c.ctx, websocket.MessageBinary, data); err != nil {
+					c.cancel()
+				}
+			}
 		}
 		if err != nil {
 			return // PTY closed
-		}
-	}
-}
-
-func (s *Server) broadcast(data []byte) {
-	s.mu.Lock()
-	clients := make([]*wsClient, 0, len(s.clients))
-	for c := range s.clients {
-		clients = append(clients, c)
-	}
-	s.mu.Unlock()
-
-	for _, c := range clients {
-		// Binary frames for terminal output
-		err := c.conn.Write(c.ctx, websocket.MessageBinary, data)
-		if err != nil {
-			c.cancel()
 		}
 	}
 }
@@ -261,7 +279,6 @@ func (s *Server) waitChild() {
 	s.err = s.cmd.Wait()
 	close(s.done)
 
-	// Give clients a moment to receive final output, then close
 	s.mu.Lock()
 	for c := range s.clients {
 		c.conn.Close(websocket.StatusNormalClosure, "process exited")

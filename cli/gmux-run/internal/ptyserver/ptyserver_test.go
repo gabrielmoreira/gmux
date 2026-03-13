@@ -212,6 +212,60 @@ func TestPTYServerCleanup(t *testing.T) {
 	}
 }
 
+func TestPTYServerScrollbackReplay(t *testing.T) {
+	sockPath := filepath.Join(t.TempDir(), "test.sock")
+
+	srv, err := New(Config{
+		Command:    []string{"bash", "-c", "echo replay-test-output; sleep 2"},
+		Cwd:        "/tmp",
+		SocketPath: sockPath,
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	defer srv.Shutdown()
+
+	// Wait for output to be produced and buffered
+	time.Sleep(300 * time.Millisecond)
+
+	// Now connect — should receive the buffered output immediately via replay
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, _, err := websocket.Dial(ctx, "ws://localhost/", &websocket.DialOptions{
+		HTTPClient: &http.Client{
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+					return net.Dial("unix", sockPath)
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+
+	// First read should contain the replayed scrollback
+	var got []byte
+	for i := 0; i < 5; i++ {
+		readCtx, readCancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		_, data, err := conn.Read(readCtx)
+		readCancel()
+		if err != nil {
+			break
+		}
+		got = append(got, data...)
+		if contains(got, "replay-test-output") {
+			break
+		}
+	}
+
+	if !contains(got, "replay-test-output") {
+		t.Errorf("expected scrollback replay to contain 'replay-test-output', got: %q", string(got))
+	}
+}
+
 func contains(data []byte, substr string) bool {
 	return len(data) > 0 && len(substr) > 0 &&
 		stringContains(string(data), substr)
