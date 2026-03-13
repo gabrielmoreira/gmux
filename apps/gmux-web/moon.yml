@@ -1,0 +1,15 @@
+language: javascript
+
+tasks:
+  dev:
+    command: vite
+  build:
+    command: vite build
+    inputs:
+      - "src/**/*"
+      - "index.html"
+      - "vite.config.ts"
+  test:
+    command: vitest run
+  lint:
+    command: tsc --noEmit

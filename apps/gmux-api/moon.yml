@@ -1,0 +1,14 @@
+language: javascript
+
+tasks:
+  dev:
+    command: tsx watch src/server.ts
+  build:
+    command: tsc -p tsconfig.json
+    inputs:
+      - "src/**/*"
+      - "tsconfig.json"
+  test:
+    command: vitest run
+  lint:
+    command: tsc --noEmit
