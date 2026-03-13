@@ -6,7 +6,6 @@ package wsproxy
 import (
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -19,7 +18,6 @@ import (
 type SocketResolver func(sessionID string) (string, error)
 
 // Handler returns an http.HandlerFunc that proxies WebSocket connections.
-// sessionID must be extracted by the caller and passed via the request context or URL.
 func Handler(resolve SocketResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID := r.PathValue("sessionID")
@@ -37,13 +35,12 @@ func Handler(resolve SocketResolver) http.HandlerFunc {
 
 		// Accept browser WebSocket
 		clientConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-			InsecureSkipVerify: true, // CORS handled at gmuxd level
+			InsecureSkipVerify: true,
 		})
 		if err != nil {
 			log.Printf("wsproxy: accept: %v", err)
 			return
 		}
-		defer clientConn.Close(websocket.StatusNormalClosure, "")
 
 		// Connect to gmux-run's Unix socket
 		ctx := r.Context()
@@ -61,48 +58,48 @@ func Handler(resolve SocketResolver) http.HandlerFunc {
 			clientConn.Close(websocket.StatusInternalError, "backend unavailable")
 			return
 		}
-		defer backendConn.Close(websocket.StatusNormalClosure, "")
 
 		log.Printf("wsproxy: proxying %s via %s", sessionID, sockPath)
 
-		// Bidirectional proxy
+		// Increase read limits for terminal data
+		clientConn.SetReadLimit(64 * 1024)
+		backendConn.SetReadLimit(64 * 1024)
+
+		proxyCtx, proxyCancel := context.WithCancel(ctx)
+
 		var wg sync.WaitGroup
 		wg.Add(2)
 
 		// Backend → Client (PTY output)
 		go func() {
 			defer wg.Done()
-			proxyFrames(ctx, backendConn, clientConn, "backend→client")
+			defer proxyCancel()
+			proxyMessages(proxyCtx, backendConn, clientConn)
 		}()
 
 		// Client → Backend (keyboard input + resize)
 		go func() {
 			defer wg.Done()
-			proxyFrames(ctx, clientConn, backendConn, "client→backend")
+			defer proxyCancel()
+			proxyMessages(proxyCtx, clientConn, backendConn)
 		}()
 
 		wg.Wait()
+
+		clientConn.Close(websocket.StatusNormalClosure, "")
+		backendConn.Close(websocket.StatusNormalClosure, "")
 		log.Printf("wsproxy: session %s disconnected", sessionID)
 	}
 }
 
-func proxyFrames(ctx context.Context, src, dst *websocket.Conn, label string) {
+func proxyMessages(ctx context.Context, src, dst *websocket.Conn) {
 	for {
-		typ, reader, err := src.Reader(ctx)
+		typ, data, err := src.Read(ctx)
 		if err != nil {
 			return
 		}
-
-		writer, err := dst.Writer(ctx, typ)
+		err = dst.Write(ctx, typ, data)
 		if err != nil {
-			return
-		}
-
-		if _, err := io.Copy(writer, reader); err != nil {
-			return
-		}
-
-		if err := writer.Close(); err != nil {
 			return
 		}
 	}

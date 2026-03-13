@@ -171,6 +171,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		log.Printf("ptyserver: ws accept: %v", err)
 		return
 	}
+	conn.SetReadLimit(64 * 1024)
 
 	ctx, cancel := context.WithCancel(r.Context())
 	client := &wsClient{

@@ -1,6 +1,6 @@
 # ADR-0004: Integrated PTY + WebSocket transport (replace abduco + ttyd)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-03-13
 
 ## Context
