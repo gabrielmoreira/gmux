@@ -12,6 +12,7 @@ type Session struct {
 	Kind       string  `json:"kind"`
 	State      string  `json:"state"`
 	UpdatedAt  float64 `json:"updated_at"`
+	SocketPath string  `json:"socket_path,omitempty"`
 }
 
 type Event struct {

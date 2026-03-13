@@ -11,6 +11,7 @@ import (
 
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/discovery"
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/store"
+	"github.com/gmuxapp/gmux/services/gmuxd/internal/wsproxy"
 )
 
 func main() {
@@ -39,7 +40,7 @@ func main() {
 			"data": map[string]any{
 				"adapters": []string{"pi", "generic"},
 				"transport": map[string]any{
-					"kind":   "ttyd",
+					"kind":   "websocket",
 					"replay": false,
 				},
 			},
@@ -72,7 +73,7 @@ func main() {
 				writeError(w, http.StatusMethodNotAllowed, "bad_request", "method not allowed")
 				return
 			}
-			_, ok := sessions.Get(sessionID)
+			sess, ok := sessions.Get(sessionID)
 			if !ok {
 				writeError(w, http.StatusNotFound, "not_found", "session not found")
 				return
@@ -80,9 +81,9 @@ func main() {
 			writeJSON(w, map[string]any{
 				"ok": true,
 				"data": map[string]any{
-					"transport": "ttyd",
-					"port":      7711,
-					"is_new":    true,
+					"transport":   "websocket",
+					"ws_path":     "/ws/" + sessionID,
+					"socket_path": sess.SocketPath,
 				},
 			})
 
@@ -101,6 +102,18 @@ func main() {
 			http.NotFound(w, r)
 		}
 	})
+
+	// WebSocket proxy: /ws/{session_id} → gmux-run Unix socket
+	mux.HandleFunc("/ws/{sessionID}", wsproxy.Handler(func(sessionID string) (string, error) {
+		sess, ok := sessions.Get(sessionID)
+		if !ok {
+			return "", fmt.Errorf("session %s not found", sessionID)
+		}
+		if sess.SocketPath == "" {
+			return "", fmt.Errorf("session %s has no socket", sessionID)
+		}
+		return sess.SocketPath, nil
+	}))
 
 	mux.HandleFunc("/v1/events", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {

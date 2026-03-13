@@ -27,6 +27,7 @@ type metaFile struct {
 	Pid        int      `json:"pid,omitempty"`
 	ExitCode   *int     `json:"exit_code,omitempty"`
 	Error      string   `json:"error,omitempty"`
+	SocketPath string   `json:"socket_path,omitempty"`
 }
 
 func toSession(m metaFile) store.Session {
@@ -41,6 +42,7 @@ func toSession(m metaFile) store.Session {
 		Kind:       m.Kind,
 		State:      m.State,
 		UpdatedAt:  m.UpdatedAt,
+		SocketPath: m.SocketPath,
 	}
 }
 
