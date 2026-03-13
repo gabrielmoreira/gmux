@@ -6,6 +6,15 @@
 2. Preserve proven reliability properties (server truth, SSE-driven updates, isolated UI state).
 3. Move contracts first, implementation second.
 4. Keep each migration step shippable and reversible.
+5. Explicitly re-evaluate old decisions before porting code.
+
+## Rethink checkpoints (must answer before code import)
+
+- Is this logic still necessary with `gmux-run` as metadata authority?
+- Is this concern in the right component boundary (web/api/gmuxd/gmux-run)?
+- Can this be represented as a contract/type instead of ad-hoc behavior?
+- Does this preserve single source of truth on the server side?
+- Can we test this behavior in isolation (unit) and end-to-end (lifecycle)?
 
 ## Source repository
 
@@ -19,25 +28,28 @@
 
 ## Phase 1 — contract hardening
 
+- [x] establish gmuxd REST envelope patterns and error code scaffold in `packages/protocol`
 - [ ] finalize gmuxd REST v1 endpoint envelopes and error codes
+- [x] establish session state/schema runtime types in `packages/protocol`
 - [ ] finalize session metadata schema v1 and state machine
-- [ ] generate TS types from schema/contracts in `packages/protocol`
-- [ ] define compatibility/versioning policy
+- [x] generate TS runtime-validated contract types in `packages/protocol`
+- [x] define compatibility/versioning policy (`plans/versioning-release-policy.md`)
 
 ## Phase 2 — API/web bootstrap (TS)
 
-- [ ] scaffold `apps/gmux-api` with Hono + tRPC
-- [ ] scaffold `apps/gmux-web` with Preact + Vite
-- [ ] implement minimal vertical slice:
-  - [ ] list sessions (mock from protocol fixtures)
-  - [ ] subscribe to updates (SSE)
-  - [ ] preserve UI-only selected session semantics
+- [x] scaffold `apps/gmux-api` with Hono + tRPC
+- [x] scaffold `apps/gmux-web` with Preact + Vite
+- [x] implement minimal vertical slice:
+  - [x] list sessions via typed tRPC -> gmuxd REST path
+  - [x] subscribe to updates (SSE)
+  - [x] preserve UI-only selected session semantics
 
 ## Phase 3 — gmuxd bootstrap (native)
 
-- [ ] implement gmuxd health/capabilities endpoints
-- [ ] implement basic session registry in-memory
-- [ ] add events SSE endpoint
+- [x] implement gmuxd health endpoint
+- [ ] implement gmuxd capabilities endpoint
+- [x] implement basic session registry in-memory
+- [x] add events SSE endpoint
 - [ ] add local file-backed persistence/reconciliation
 
 ## Phase 4 — gmux-run bootstrap (native)
@@ -71,9 +83,16 @@ Candidate rewrite areas:
 
 ## Phase 7 — packaging and distribution
 
-- [ ] define gmuxd/gmux-run release pipeline
+- [ ] define gmuxd/gmux-run release pipeline (native artifacts + checksums)
+- [ ] package web assets into gmuxd local distribution
+- [ ] define gmux-api deployment packaging (container + node runtime path)
 - [ ] integrate patched abduco distribution strategy
 - [ ] ship curl bootstrap installer for zero-install path
+- [ ] add `gmux open` convenience launcher (browser app-mode when supported)
+
+## Explicitly deferred from v1
+
+- [ ] Electron desktop app (re-evaluate only after real shortcut pain data)
 
 ## Immediate next implementation task
 
