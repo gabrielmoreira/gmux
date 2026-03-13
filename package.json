@@ -1,0 +1,19 @@
+{
+  "name": "@gmux/root",
+  "private": true,
+  "version": "0.1.0",
+  "description": "gmux monorepo",
+  "packageManager": "pnpm@10.32.1",
+  "scripts": {
+    "build": "moon run :build",
+    "dev": "moon run :dev",
+    "test": "moon run :test",
+    "lint": "moon run :lint",
+    "check": "moon check :build :test",
+    "graph": "moon project-graph"
+  },
+  "devDependencies": {
+    "@moonrepo/cli": "^2.0.4",
+    "typescript": "^5.8.2"
+  }
+}

@@ -1,0 +1,23 @@
+# moon
+.moon/cache
+.moon/docker
+
+# node
+node_modules
+.pnpm-store
+
+# build artifacts
+dist
+build
+coverage
+
+# go
+bin/
+*.test
+services/gmuxd/gmuxd
+cli/gmux-run/gmux-run
+
+# env
+.env
+.env.*
+!.env.example
