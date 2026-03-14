@@ -7,7 +7,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/discovery"
@@ -15,7 +18,81 @@ import (
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/wsproxy"
 )
 
+type Launcher struct {
+	ID          string   `json:"id"`
+	Label       string   `json:"label"`
+	Command     []string `json:"command"`
+	Description string   `json:"description,omitempty"`
+}
+
+type LaunchConfig struct {
+	DefaultLauncher string     `json:"default_launcher"`
+	Launchers       []Launcher `json:"launchers"`
+}
+
+// discoverLaunchers calls "gmuxr adapters" to get the adapter-registered
+// launchers, then prepends shell as the default.
+func discoverLaunchers(gmuxrPath string) LaunchConfig {
+	cfg := LaunchConfig{
+		DefaultLauncher: "shell",
+		Launchers: []Launcher{
+			{ID: "shell", Label: "Shell", Command: nil, Description: "Default shell"},
+		},
+	}
+
+	if gmuxrPath == "" {
+		log.Printf("launchers: gmuxr not found, only shell available")
+		return cfg
+	}
+
+	out, err := exec.Command(gmuxrPath, "adapters").Output()
+	if err != nil {
+		log.Printf("launchers: gmuxr adapters failed: %v", err)
+		return cfg
+	}
+
+	var adapters []Launcher
+	if err := json.Unmarshal(out, &adapters); err != nil {
+		log.Printf("launchers: failed to parse adapter list: %v", err)
+		return cfg
+	}
+
+	cfg.Launchers = append(cfg.Launchers, adapters...)
+	log.Printf("launchers: discovered %d adapter(s): %v", len(adapters), adapterNames(adapters))
+	return cfg
+}
+
+// resolveGmuxr finds the gmuxr binary.
+// Priority: sibling to this binary > PATH lookup.
+// Both gmuxd and gmuxr are always installed to the same directory.
+func resolveGmuxr() string {
+	if exe, err := os.Executable(); err == nil {
+		sibling := filepath.Join(filepath.Dir(exe), "gmuxr")
+		if _, err := os.Stat(sibling); err == nil {
+			return sibling
+		}
+	}
+	if p, err := exec.LookPath("gmuxr"); err == nil {
+		return p
+	}
+	return ""
+}
+
+func adapterNames(ls []Launcher) []string {
+	names := make([]string, len(ls))
+	for i, l := range ls {
+		names[i] = l.ID
+	}
+	return names
+}
+
 func main() {
+	gmuxrBin := resolveGmuxr() // resolve once, use everywhere
+	if gmuxrBin != "" {
+		log.Printf("gmuxr: %s", gmuxrBin)
+	}
+	launchConfig := discoverLaunchers(gmuxrBin)
+
 	sessions := store.New()
 	subs := discovery.NewSubscriptions(sessions)
 
@@ -44,13 +121,20 @@ func main() {
 		writeJSON(w, map[string]any{
 			"ok": true,
 			"data": map[string]any{
-				"adapters": []string{"pi", "generic"},
+				"adapters": []string{"pi", "shell"},
 				"transport": map[string]any{
 					"kind":   "websocket",
 					"replay": true,
 				},
 			},
 		})
+	})
+
+	// ── Config ──
+
+	mux.HandleFunc("GET /v1/config", func(w http.ResponseWriter, r *http.Request) {
+		cfg := launchConfig
+		writeJSON(w, map[string]any{"ok": true, "data": cfg})
 	})
 
 	// ── Sessions ──
@@ -112,6 +196,84 @@ func main() {
 		subs.Unsubscribe(req.SessionID)
 		log.Printf("deregister: %s", req.SessionID)
 		writeJSON(w, map[string]any{"ok": true})
+	})
+
+	// ── Launch ──
+
+	mux.HandleFunc("POST /v1/launch", func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "read error")
+			return
+		}
+
+		var req struct {
+			Cwd        string   `json:"cwd"`
+			Command    []string `json:"command"`
+			LauncherID string   `json:"launcher_id"`
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON")
+			return
+		}
+
+		// Resolve command from launcher_id if no explicit command
+		if len(req.Command) == 0 && req.LauncherID != "" {
+			cfg := launchConfig
+			for _, l := range cfg.Launchers {
+				if l.ID == req.LauncherID {
+					req.Command = l.Command
+					break
+				}
+			}
+		}
+
+		// Empty/nil command means "shell" — use user's $SHELL
+		if len(req.Command) == 0 {
+			shell := os.Getenv("SHELL")
+			if shell == "" {
+				shell = "/bin/sh"
+			}
+			req.Command = []string{shell}
+		}
+
+		cwd := req.Cwd
+		if cwd == "" {
+			cwd = os.Getenv("HOME")
+		}
+
+		if gmuxrBin == "" {
+			writeError(w, http.StatusInternalServerError, "gmuxr_not_found", "gmuxr not found (install gmuxr alongside gmuxd)")
+			return
+		}
+
+		// Build args: gmuxr [--cwd dir] -- <command...>
+		args := []string{}
+		args = append(args, "--cwd", cwd)
+		args = append(args, "--")
+		args = append(args, req.Command...)
+
+		cmd := exec.Command(gmuxrBin, args...)
+		cmd.Dir = cwd
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // detach from gmuxd
+		cmd.Stdout = nil
+		cmd.Stderr = nil
+		cmd.Stdin = nil
+
+		if err := cmd.Start(); err != nil {
+			log.Printf("launch: failed to start gmuxr: %v", err)
+			writeError(w, http.StatusInternalServerError, "launch_failed", err.Error())
+			return
+		}
+
+		// Don't wait — gmuxr is a detached daemon. Release the process.
+		go cmd.Wait()
+
+		log.Printf("launch: started gmuxr pid=%d cwd=%s cmd=%v", cmd.Process.Pid, cwd, req.Command)
+		writeJSON(w, map[string]any{
+			"ok":   true,
+			"data": map[string]any{"pid": cmd.Process.Pid},
+		})
 	})
 
 	// ── Session Actions ──
