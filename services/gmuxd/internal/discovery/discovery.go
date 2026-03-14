@@ -72,9 +72,16 @@ func Scan(sessions *store.Store, subs *Subscriptions) {
 		sess, err := queryMeta(sockPath)
 		if err != nil {
 			// Socket unreachable — stale, clean up
-			log.Printf("discovery: %s unreachable, removing: %v", sessionID, err)
+			// Socket unreachable — mark dead if we know about it, clean up socket file
+			log.Printf("discovery: %s unreachable: %v", sessionID, err)
 			os.Remove(sockPath)
-			sessions.Remove(sessionID)
+			if sess, ok := sessions.Get(sessionID); ok && sess.Alive {
+				sess.Alive = false
+				sessions.Upsert(sess)
+			}
+			if subs != nil {
+				subs.Unsubscribe(sessionID)
+			}
 			continue
 		}
 
@@ -86,12 +93,13 @@ func Scan(sessions *store.Store, subs *Subscriptions) {
 		}
 	}
 
-	// Remove sessions whose sockets no longer exist
+	// Mark unseen live sessions as dead (socket gone)
+	// Dead sessions are kept in the store for UI visibility.
 	for _, s := range sessions.List() {
-		if !seen[s.ID] && s.SocketPath != "" {
-			// Check if socket file still exists
+		if !seen[s.ID] && s.Alive && s.SocketPath != "" {
 			if _, err := os.Stat(s.SocketPath); os.IsNotExist(err) {
-				sessions.Remove(s.ID)
+				s.Alive = false
+				sessions.Upsert(s)
 				if subs != nil {
 					subs.Unsubscribe(s.ID)
 				}
@@ -147,4 +155,24 @@ func queryMeta(socketPath string) (*store.Session, error) {
 	}
 
 	return &sess, nil
+}
+
+// KillSession sends POST /kill to a runner's Unix socket, asking it to
+// SIGTERM its child process. The runner's normal exit lifecycle handles the rest.
+func KillSession(socketPath string) error {
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return net.DialTimeout("unix", socketPath, 2*time.Second)
+			},
+		},
+		Timeout: 3 * time.Second,
+	}
+
+	resp, err := client.Post("http://localhost/kill", "", nil)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
 }

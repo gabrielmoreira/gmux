@@ -107,8 +107,10 @@ func main() {
 			return
 		}
 
-		sessions.Remove(req.SessionID)
+		// Don't remove from store — the exit event from the subscription
+		// already marked it alive: false. Just clean up the subscription.
 		subs.Unsubscribe(req.SessionID)
+		log.Printf("deregister: %s", req.SessionID)
 		writeJSON(w, map[string]any{"ok": true})
 	})
 
@@ -151,9 +153,17 @@ func main() {
 				writeError(w, http.StatusMethodNotAllowed, "bad_request", "method not allowed")
 				return
 			}
-			if !sessions.Remove(sessionID) {
+			sess, ok := sessions.Get(sessionID)
+			if !ok {
 				writeError(w, http.StatusNotFound, "not_found", "session not found")
 				return
+			}
+			// Send kill to runner — it will SIGTERM the child, which triggers
+			// normal exit lifecycle (exit event → subscription updates store)
+			if sess.SocketPath != "" && sess.Alive {
+				if err := discovery.KillSession(sess.SocketPath); err != nil {
+					log.Printf("kill: %s: runner kill failed: %v", sessionID, err)
+				}
 			}
 			writeJSON(w, map[string]any{"ok": true, "data": map[string]any{}})
 

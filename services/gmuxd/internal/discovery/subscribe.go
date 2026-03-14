@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -193,6 +194,12 @@ func (sub *Subscriptions) handleEvent(sessionID, socketPath, eventType string, d
 		sess.Alive = false
 		sess.ExitCode = &exit.ExitCode
 		sess.ExitedAt = time.Now().UTC().Format(time.RFC3339)
+		// Set a meaningful status for the exit
+		if exit.ExitCode == 0 {
+			sess.Status = &store.Status{Label: "completed", State: "success"}
+		} else {
+			sess.Status = &store.Status{Label: fmt.Sprintf("exited (%d)", exit.ExitCode), State: "error"}
+		}
 		sub.store.Upsert(sess)
 
 	default:
