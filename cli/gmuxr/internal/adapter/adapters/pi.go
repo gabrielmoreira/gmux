@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"bytes"
 	"path/filepath"
 
 	"github.com/gmuxapp/gmux/cli/gmuxr/internal/adapter"
@@ -17,11 +18,11 @@ func init() {
 }
 
 // Pi is the adapter for the pi coding agent.
-// It recognizes `pi` and `pi-coding-agent` commands, injects session
-// tracking, and monitors PTY output for agent state transitions.
+// Recognizes pi/pi-coding-agent commands and monitors PTY output for
+// spinner patterns to report active/idle status.
 //
-// Future: a Sidecar() will watch ~/.pi/sessions/<id>/ for JSONL events
-// and produce richer status (thinking, waiting, tool_running, etc.).
+// Session file attribution (resume key) is handled by gmuxd, not here.
+// See ADR-0009 for the content-similarity matching design.
 type Pi struct{}
 
 func NewPi() *Pi { return &Pi{} }
@@ -29,8 +30,7 @@ func NewPi() *Pi { return &Pi{} }
 func (p *Pi) Name() string { return "pi" }
 
 // Match returns true if any argument in the command is the `pi` or
-// `pi-coding-agent` binary. This handles direct invocation, npx wrappers,
-// nix run, full paths, etc.
+// `pi-coding-agent` binary.
 func (p *Pi) Match(cmd []string) bool {
 	for _, arg := range cmd {
 		base := filepath.Base(arg)
@@ -44,30 +44,33 @@ func (p *Pi) Match(cmd []string) bool {
 	return false
 }
 
-// Prepare injects pi-specific environment. The common GMUX_* vars are
-// set automatically by the runner.
-func (p *Pi) Prepare(ctx adapter.PrepareContext) ([]string, []string) {
-	// For now, pass command through unchanged.
-	// Future: inject --session-id for session file correlation.
-	return ctx.Command, nil
+// Env returns no extra environment variables.
+func (p *Pi) Env(ctx adapter.EnvContext) []string {
+	return nil
 }
 
-// Monitor parses PTY output for pi agent state patterns.
-// Pi outputs structured status lines that we can detect:
-//   - "⏳" or spinner → thinking/active
-//   - "?" prompt or waiting → attention
-//   - Tool execution markers → active with tool label
-//
-// For v1, we rely on the generic activity detection. Once pi's session
-// file watching (Sidecar) is implemented, this becomes a secondary signal.
+// Spinner characters used by pi's TUI (braille pattern dots).
+var piSpinnerChars = [][]byte{
+	[]byte("⠋"), []byte("⠙"), []byte("⠹"), []byte("⠸"),
+	[]byte("⠼"), []byte("⠴"), []byte("⠦"), []byte("⠧"),
+	[]byte("⠇"), []byte("⠏"),
+}
+
+// Monitor detects pi's spinner pattern in PTY output.
+// When a spinner character followed by " Working..." is detected,
+// reports active status. Returns nil for non-spinner output.
 func (p *Pi) Monitor(output []byte) *adapter.Status {
-	// v1: no output parsing yet. The generic adapter's activity detection
-	// covers the basics. Pi-specific parsing will be added when we have
-	// stable output format documentation from pi.
-	//
-	// Future patterns to detect:
-	// - "Thinking..." / spinner → Status{Label: "thinking", State: "active"}
-	// - "waiting for" / "?" prompt → Status{Label: "waiting", State: "attention"}
-	// - "Running tool:" → Status{Label: "running <tool>", State: "active"}
+	for _, sc := range piSpinnerChars {
+		if idx := bytes.Index(output, sc); idx >= 0 {
+			// Check if "Working..." follows the spinner
+			rest := output[idx+len(sc):]
+			if bytes.Contains(rest, []byte("Working")) {
+				return &adapter.Status{
+					Label: "working",
+					State: "active",
+				}
+			}
+		}
+	}
 	return nil
 }

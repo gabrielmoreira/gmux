@@ -48,15 +48,16 @@ func TestPTYServerBasicOutput(t *testing.T) {
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
-	// Read output — should contain "hello-from-pty"
+	// Read output — first frame is the reset sequence (always sent on connect),
+	// then PTY output follows. Read until we see "hello-from-pty".
 	var got []byte
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 20; i++ {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
 			break
 		}
 		got = append(got, data...)
-		if len(got) > 0 {
+		if contains(got, "hello-from-pty") {
 			break
 		}
 	}
