@@ -10,12 +10,16 @@ node_modules
 dist
 build
 coverage
+.astro
 
 # go
 bin/
 *.test
 services/gmuxd/gmuxd
 cli/gmuxr/gmuxr
+
+# ralph state
+.ralph
 
 # env
 .env
