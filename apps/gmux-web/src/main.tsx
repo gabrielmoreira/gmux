@@ -2,6 +2,7 @@ import { render } from 'preact'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { ImageAddon } from '@xterm/addon-image'
 // AttachAddon removed — we wire onmessage/onData manually for reconnect support
 import '@xterm/xterm/css/xterm.css'
 import './styles.css'
@@ -504,6 +505,7 @@ function TerminalView({ sessionId }: { sessionId: string }) {
     })
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
+    term.loadAddon(new ImageAddon())
     term.open(containerRef.current)
     fitAddon.fit()
     termRef.current = term

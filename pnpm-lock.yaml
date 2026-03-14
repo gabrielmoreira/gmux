@@ -60,6 +60,9 @@ importers:
       '@xterm/addon-fit':
         specifier: 0.12.0-beta.195
         version: 0.12.0-beta.195(@xterm/xterm@6.1.0-beta.195)
+      '@xterm/addon-image':
+        specifier: 0.10.0-beta.195
+        version: 0.10.0-beta.195(@xterm/xterm@6.1.0-beta.195)
       '@xterm/xterm':
         specifier: 6.1.0-beta.195
         version: 6.1.0-beta.195
@@ -1201,6 +1204,11 @@ packages:
 
   '@xterm/addon-fit@0.12.0-beta.195':
     resolution: {integrity: sha512-Ihc+azRK3HFB2NVBEoWRkEUGYVxoojK2X4Jx6YxiRKdAu6bYzDTzTImE/0EDOjjz2AUUqddRwCUdSbz2/WvYfA==}
+    peerDependencies:
+      '@xterm/xterm': ^6.1.0-beta.195
+
+  '@xterm/addon-image@0.10.0-beta.195':
+    resolution: {integrity: sha512-jm6uzMpfXXut+Yfza/GNCUw2pOw3Bpsn4QEHvh5KCc8dfEuyoLeqmn026Y2kXY2BGoxj+DEHlmlPnL54ihCb2Q==}
     peerDependencies:
       '@xterm/xterm': ^6.1.0-beta.195
 
@@ -3524,6 +3532,10 @@ snapshots:
       tinyrainbow: 2.0.0
 
   '@xterm/addon-fit@0.12.0-beta.195(@xterm/xterm@6.1.0-beta.195)':
+    dependencies:
+      '@xterm/xterm': 6.1.0-beta.195
+
+  '@xterm/addon-image@0.10.0-beta.195(@xterm/xterm@6.1.0-beta.195)':
     dependencies:
       '@xterm/xterm': 6.1.0-beta.195
 
