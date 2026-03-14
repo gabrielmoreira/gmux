@@ -14,6 +14,9 @@ importers:
       '@moonrepo/cli':
         specifier: ^2.0.4
         version: 2.0.4
+      playwright:
+        specifier: ^1.58.2
+        version: 1.58.2
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
@@ -61,8 +64,8 @@ importers:
         specifier: 0.12.0-beta.195
         version: 0.12.0-beta.195(@xterm/xterm@6.1.0-beta.195)
       '@xterm/addon-image':
-        specifier: 0.10.0-beta.195
-        version: 0.10.0-beta.195(@xterm/xterm@6.1.0-beta.195)
+        specifier: github:mgabor3141/xterm.js#fix/image-addon-hidpi&path:addons/addon-image
+        version: https://codeload.github.com/mgabor3141/xterm.js/tar.gz/da8c3baed8c5f7c93dc9b8db9508d1b83f0536dc#path:addons/addon-image
       '@xterm/xterm':
         specifier: 6.1.0-beta.195
         version: 6.1.0-beta.195
@@ -1207,10 +1210,9 @@ packages:
     peerDependencies:
       '@xterm/xterm': ^6.1.0-beta.195
 
-  '@xterm/addon-image@0.10.0-beta.195':
-    resolution: {integrity: sha512-jm6uzMpfXXut+Yfza/GNCUw2pOw3Bpsn4QEHvh5KCc8dfEuyoLeqmn026Y2kXY2BGoxj+DEHlmlPnL54ihCb2Q==}
-    peerDependencies:
-      '@xterm/xterm': ^6.1.0-beta.195
+  '@xterm/addon-image@https://codeload.github.com/mgabor3141/xterm.js/tar.gz/da8c3baed8c5f7c93dc9b8db9508d1b83f0536dc#path:addons/addon-image':
+    resolution: {path: addons/addon-image, tarball: https://codeload.github.com/mgabor3141/xterm.js/tar.gz/da8c3baed8c5f7c93dc9b8db9508d1b83f0536dc}
+    version: 0.9.0
 
   '@xterm/xterm@6.1.0-beta.195':
     resolution: {integrity: sha512-lLVfI3T4pX4W4qrbf2Qhdq5Pa00FkOOUz9vlOm6f1r5wel1mUafeJL8zacfsUVdc03MsCKHRyZkLubmDEnabcw==}
@@ -1548,6 +1550,11 @@ packages:
   fontkitten@1.0.3:
     resolution: {integrity: sha512-Wp1zXWPVUPBmfoa3Cqc9ctaKuzKAV6uLstRqlR56kSjplf5uAce+qeyYym7F+PHbGTk+tCEdkCW6RD7DX/gBZw==}
     engines: {node: '>=20'}
+
+  fsevents@2.3.2:
+    resolution: {integrity: sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==}
+    engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
+    os: [darwin]
 
   fsevents@2.3.3:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
@@ -2008,6 +2015,16 @@ packages:
   picomatch@4.0.3:
     resolution: {integrity: sha512-5gTmgEY/sqK6gFXLIsQNH19lWb4ebPDLA4SdLP7dsWkIXHWlG66oPuVvXSGFPppYZz8ZDZq0dYYrbHfBCVUb1Q==}
     engines: {node: '>=12'}
+
+  playwright-core@1.58.2:
+    resolution: {integrity: sha512-yZkEtftgwS8CsfYo7nm0KE8jsvm6i/PTgVtB8DL726wNf6H2IMsDuxCpJj59KDaxCtSnrWan2AeDqM7JBaultg==}
+    engines: {node: '>=18'}
+    hasBin: true
+
+  playwright@1.58.2:
+    resolution: {integrity: sha512-vA30H8Nvkq/cPBnNw4Q8TWz1EJyqgpuinBcHET0YVJVFldr8JDNiU9LaWAE1KqSkRYazuaBhTpB5ZzShOezQ6A==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   postcss-nested@6.2.0:
     resolution: {integrity: sha512-HQbt28KulC5AJzG+cZtj9kvKB93CFCdLvog1WFLf1D+xmMvPGlBstkpTEZfK5+AN9hfJocyBFCNiqyS48bpgzQ==}
@@ -3535,9 +3552,7 @@ snapshots:
     dependencies:
       '@xterm/xterm': 6.1.0-beta.195
 
-  '@xterm/addon-image@0.10.0-beta.195(@xterm/xterm@6.1.0-beta.195)':
-    dependencies:
-      '@xterm/xterm': 6.1.0-beta.195
+  '@xterm/addon-image@https://codeload.github.com/mgabor3141/xterm.js/tar.gz/da8c3baed8c5f7c93dc9b8db9508d1b83f0536dc#path:addons/addon-image': {}
 
   '@xterm/xterm@6.1.0-beta.195': {}
 
@@ -3966,6 +3981,9 @@ snapshots:
   fontkitten@1.0.3:
     dependencies:
       tiny-inflate: 1.0.3
+
+  fsevents@2.3.2:
+    optional: true
 
   fsevents@2.3.3:
     optional: true
@@ -4826,6 +4844,14 @@ snapshots:
   picomatch@2.3.1: {}
 
   picomatch@4.0.3: {}
+
+  playwright-core@1.58.2: {}
+
+  playwright@1.58.2:
+    dependencies:
+      playwright-core: 1.58.2
+    optionalDependencies:
+      fsevents: 2.3.2
 
   postcss-nested@6.2.0(postcss@8.5.8):
     dependencies:
