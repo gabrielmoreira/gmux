@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -107,6 +110,9 @@ func main() {
 	fmt.Printf("socket:   %s\n", srv.SocketPath())
 	fmt.Println("serving...")
 
+	// Register with gmuxd (best-effort, non-blocking)
+	go registerWithGmuxd(sessionID, sockPath)
+
 	// Start silence checker for generic adapter
 	if g, ok := a.(*adapters.Generic); ok {
 		go func() {
@@ -139,6 +145,55 @@ func main() {
 
 	exitCode := srv.ExitCode()
 	state.SetExited(exitCode)
+
+	// Deregister from gmuxd (best-effort)
+	deregisterFromGmuxd(sessionID)
+
 	fmt.Printf("exited:   %d\n", exitCode)
 	os.Exit(exitCode)
+}
+
+func registerWithGmuxd(sessionID, socketPath string) {
+	gmuxdAddr := os.Getenv("GMUXD_ADDR")
+	if gmuxdAddr == "" {
+		gmuxdAddr = "http://localhost:8790"
+	}
+
+	payload, _ := json.Marshal(map[string]string{
+		"session_id":  sessionID,
+		"socket_path": socketPath,
+	})
+
+	// Retry a few times — gmux-run may start before the HTTP server is ready
+	for i := 0; i < 5; i++ {
+		if i > 0 {
+			time.Sleep(500 * time.Millisecond)
+		}
+		client := &http.Client{Timeout: 2 * time.Second}
+		resp, err := client.Post(gmuxdAddr+"/v1/register", "application/json", bytes.NewReader(payload))
+		if err != nil {
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode == 200 {
+			log.Printf("registered with gmuxd")
+			return
+		}
+	}
+	log.Printf("could not register with gmuxd (will be discovered via socket scan)")
+}
+
+func deregisterFromGmuxd(sessionID string) {
+	gmuxdAddr := os.Getenv("GMUXD_ADDR")
+	if gmuxdAddr == "" {
+		gmuxdAddr = "http://localhost:8790"
+	}
+
+	payload, _ := json.Marshal(map[string]string{"session_id": sessionID})
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Post(gmuxdAddr+"/v1/deregister", "application/json", bytes.NewReader(payload))
+	if err != nil {
+		return
+	}
+	resp.Body.Close()
 }

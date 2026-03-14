@@ -5,25 +5,38 @@ import (
 	"time"
 )
 
+// Session matches the schema v2 model served by gmux-run's GET /meta.
 type Session struct {
-	SessionID  string  `json:"session_id"`
-	AbducoName string  `json:"abduco_name"`
-	Title      string  `json:"title,omitempty"`
+	ID         string  `json:"id"`
+	CreatedAt  string  `json:"created_at,omitempty"`
+	Command    []string `json:"command,omitempty"`
+	Cwd        string  `json:"cwd,omitempty"`
 	Kind       string  `json:"kind"`
-	State      string  `json:"state"`
-	UpdatedAt  float64 `json:"updated_at"`
+	Alive      bool    `json:"alive"`
+	Pid        int     `json:"pid,omitempty"`
+	ExitCode   *int    `json:"exit_code,omitempty"`
+	StartedAt  string  `json:"started_at,omitempty"`
+	ExitedAt   string  `json:"exited_at,omitempty"`
+	Title      string  `json:"title,omitempty"`
+	Subtitle   string  `json:"subtitle,omitempty"`
+	Status     *Status `json:"status"`
+	Unread     bool    `json:"unread"`
 	SocketPath string  `json:"socket_path,omitempty"`
 }
 
+// Status is the application-reported status per schema v2.
+type Status struct {
+	Label string `json:"label"`
+	State string `json:"state"` // active|attention|success|error|paused|info
+	Icon  string `json:"icon,omitempty"`
+}
+
 type Event struct {
-	Type      string  `json:"type"`
-	SessionID string  `json:"session_id"`
-	UpdatedAt float64 `json:"updated_at"`
+	Type string  `json:"type"` // session-upsert, session-remove
+	ID   string  `json:"id"`
 
 	// Present for session-upsert
 	Session *Session `json:"session,omitempty"`
-	// Present for session-state
-	State string `json:"state,omitempty"`
 }
 
 type subscriber struct {
@@ -41,28 +54,6 @@ func New() *Store {
 		sessions:    make(map[string]Session),
 		subscribers: make(map[*subscriber]struct{}),
 	}
-}
-
-func NewWithSeeds() *Store {
-	s := New()
-	now := NowUnix()
-	s.sessions["sess-1"] = Session{
-		SessionID:  "sess-1",
-		AbducoName: "pi:gmux:1",
-		Title:      "gmux bootstrap",
-		Kind:       "pi",
-		State:      "running",
-		UpdatedAt:  now,
-	}
-	s.sessions["sess-2"] = Session{
-		SessionID:  "sess-2",
-		AbducoName: "pi:gmux:2",
-		Title:      "docs cleanup",
-		Kind:       "pi",
-		State:      "waiting",
-		UpdatedAt:  now - 15,
-	}
-	return s
 }
 
 func (s *Store) List() []Session {
@@ -85,37 +76,14 @@ func (s *Store) Get(id string) (Session, bool) {
 
 func (s *Store) Upsert(sess Session) {
 	s.mu.Lock()
-	sess.UpdatedAt = NowUnix()
-	s.sessions[sess.SessionID] = sess
+	s.sessions[sess.ID] = sess
 	s.mu.Unlock()
 
 	s.broadcast(Event{
-		Type:      "session-upsert",
-		SessionID: sess.SessionID,
-		UpdatedAt: sess.UpdatedAt,
-		Session:   &sess,
+		Type:    "session-upsert",
+		ID:      sess.ID,
+		Session: &sess,
 	})
-}
-
-func (s *Store) SetState(id, state string) (Session, bool) {
-	s.mu.Lock()
-	sess, ok := s.sessions[id]
-	if !ok {
-		s.mu.Unlock()
-		return Session{}, false
-	}
-	sess.State = state
-	sess.UpdatedAt = NowUnix()
-	s.sessions[id] = sess
-	s.mu.Unlock()
-
-	s.broadcast(Event{
-		Type:      "session-state",
-		SessionID: id,
-		UpdatedAt: sess.UpdatedAt,
-		State:     state,
-	})
-	return sess, true
 }
 
 func (s *Store) Remove(id string) bool {
@@ -128,9 +96,8 @@ func (s *Store) Remove(id string) bool {
 
 	if ok {
 		s.broadcast(Event{
-			Type:      "session-remove",
-			SessionID: id,
-			UpdatedAt: NowUnix(),
+			Type: "session-remove",
+			ID:   id,
 		})
 	}
 	return ok
@@ -160,7 +127,6 @@ func (s *Store) broadcast(ev Event) {
 		select {
 		case sub.ch <- ev:
 		default:
-			// slow subscriber, drop event
 		}
 	}
 }

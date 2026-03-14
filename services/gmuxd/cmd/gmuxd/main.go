@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -17,11 +18,14 @@ import (
 func main() {
 	sessions := store.New()
 
-	// Start metadata discovery from gmux-run
+	// Start socket-based discovery (scans /tmp/gmux-sessions/*.sock)
 	stopDiscovery := make(chan struct{})
-	go discovery.Watch(sessions, 2*time.Second, stopDiscovery)
+	go discovery.Watch(sessions, 3*time.Second, stopDiscovery)
 	defer close(stopDiscovery)
+
 	mux := http.NewServeMux()
+
+	// ── Health + Capabilities ──
 
 	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{
@@ -41,19 +45,71 @@ func main() {
 				"adapters": []string{"pi", "generic"},
 				"transport": map[string]any{
 					"kind":   "websocket",
-					"replay": false,
+					"replay": true,
 				},
 			},
 		})
 	})
 
-	mux.HandleFunc("/v1/sessions", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			writeError(w, http.StatusMethodNotAllowed, "bad_request", "method not allowed")
-			return
-		}
+	// ── Sessions ──
+
+	mux.HandleFunc("GET /v1/sessions", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"ok": true, "data": sessions.List()})
 	})
+
+	// ── Registration (fast path for gmux-run) ──
+
+	mux.HandleFunc("POST /v1/register", func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "read error")
+			return
+		}
+
+		var req struct {
+			SessionID  string `json:"session_id"`
+			SocketPath string `json:"socket_path"`
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON")
+			return
+		}
+
+		if req.SessionID == "" || req.SocketPath == "" {
+			writeError(w, http.StatusBadRequest, "bad_request", "session_id and socket_path required")
+			return
+		}
+
+		log.Printf("register: %s at %s", req.SessionID, req.SocketPath)
+		if err := discovery.Register(sessions, req.SocketPath); err != nil {
+			log.Printf("register: failed to query meta for %s: %v", req.SessionID, err)
+			writeError(w, http.StatusBadGateway, "runner_unreachable", err.Error())
+			return
+		}
+
+		writeJSON(w, map[string]any{"ok": true})
+	})
+
+	mux.HandleFunc("POST /v1/deregister", func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "read error")
+			return
+		}
+
+		var req struct {
+			SessionID string `json:"session_id"`
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON")
+			return
+		}
+
+		sessions.Remove(req.SessionID)
+		writeJSON(w, map[string]any{"ok": true})
+	})
+
+	// ── Session Actions ──
 
 	mux.HandleFunc("/v1/sessions/", func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
@@ -103,7 +159,8 @@ func main() {
 		}
 	})
 
-	// WebSocket proxy: /ws/{session_id} → gmux-run Unix socket
+	// ── WebSocket proxy ──
+
 	mux.HandleFunc("/ws/{sessionID}", wsproxy.Handler(func(sessionID string) (string, error) {
 		sess, ok := sessions.Get(sessionID)
 		if !ok {
@@ -115,12 +172,9 @@ func main() {
 		return sess.SocketPath, nil
 	}))
 
-	mux.HandleFunc("/v1/events", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			writeError(w, http.StatusMethodNotAllowed, "bad_request", "method not allowed")
-			return
-		}
+	// ── SSE Events ──
 
+	mux.HandleFunc("GET /v1/events", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
@@ -133,12 +187,11 @@ func main() {
 
 		// Send current state as upserts
 		for _, sess := range sessions.List() {
-			s := sess // copy
+			s := sess
 			sendSSE(w, "session-upsert", store.Event{
-				Type:      "session-upsert",
-				SessionID: s.SessionID,
-				UpdatedAt: s.UpdatedAt,
-				Session:   &s,
+				Type:    "session-upsert",
+				ID:      s.ID,
+				Session: &s,
 			})
 		}
 		flusher.Flush()

@@ -27,17 +27,18 @@ describe('gmuxd client', () => {
     expect(health.service).toBe('gmuxd')
   })
 
-  it('parses session list', async () => {
+  it('parses session list (schema v2)', async () => {
     global.fetch = mockFetch({
       '/v1/sessions': {
         ok: true,
         data: [
           {
-            session_id: 's1',
-            abduco_name: 'pi:test:1',
+            id: 'sess-1',
             kind: 'pi',
-            state: 'running',
-            updated_at: 1000,
+            alive: true,
+            pid: 12345,
+            title: 'test session',
+            status: { label: 'thinking', state: 'active' },
           },
         ],
       },
@@ -46,20 +47,21 @@ describe('gmuxd client', () => {
     const client = createGmuxdClient('http://localhost:8790')
     const sessions = await client.listSessions()
     expect(sessions).toHaveLength(1)
-    expect(sessions[0].session_id).toBe('s1')
+    expect(sessions[0].id).toBe('sess-1')
+    expect(sessions[0].alive).toBe(true)
   })
 
-  it('parses attach response', async () => {
+  it('parses attach response (websocket)', async () => {
     global.fetch = mockFetch({
-      '/v1/sessions/s1/attach': {
+      '/v1/sessions/sess-1/attach': {
         ok: true,
-        data: { transport: 'ttyd', port: 7711, is_new: true },
+        data: { transport: 'websocket', ws_path: '/ws/sess-1', socket_path: '/tmp/gmux-sessions/sess-1.sock' },
       },
     }) as any
 
     const client = createGmuxdClient('http://localhost:8790')
-    const attach = await client.attachSession('s1')
-    expect(attach.transport).toBe('ttyd')
-    expect(attach.port).toBe(7711)
+    const attach = await client.attachSession('sess-1')
+    expect(attach.transport).toBe('websocket')
+    expect(attach.ws_path).toBe('/ws/sess-1')
   })
 })

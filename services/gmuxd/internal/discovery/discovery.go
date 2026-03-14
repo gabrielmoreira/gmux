@@ -1,54 +1,30 @@
-// Package discovery watches /tmp/gmux-meta for session metadata files
-// written by gmux-run, and syncs them into the session store.
+// Package discovery scans /tmp/gmux-sessions/*.sock for live gmux-run
+// instances and queries their GET /meta endpoint to populate the store.
+// Replaces the old file-polling approach from /tmp/gmux-meta/.
 package discovery
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/store"
 )
 
-const MetaDir = "/tmp/gmux-meta"
+const SocketDir = "/tmp/gmux-sessions"
 
-type metaFile struct {
-	Version    int      `json:"version"`
-	SessionID  string   `json:"session_id"`
-	AbducoName string   `json:"abduco_name"`
-	Kind       string   `json:"kind"`
-	Command    []string `json:"command"`
-	Cwd        string   `json:"cwd"`
-	State      string   `json:"state"`
-	CreatedAt  float64  `json:"created_at"`
-	UpdatedAt  float64  `json:"updated_at"`
-	Pid        int      `json:"pid,omitempty"`
-	ExitCode   *int     `json:"exit_code,omitempty"`
-	Error      string   `json:"error,omitempty"`
-	SocketPath string   `json:"socket_path,omitempty"`
-}
-
-func toSession(m metaFile) store.Session {
-	title := ""
-	if len(m.Command) > 0 {
-		title = m.Command[0]
-	}
-	return store.Session{
-		SessionID:  m.SessionID,
-		AbducoName: m.AbducoName,
-		Title:      title,
-		Kind:       m.Kind,
-		State:      m.State,
-		UpdatedAt:  m.UpdatedAt,
-		SocketPath: m.SocketPath,
-	}
-}
-
-// Watch polls the metadata directory and syncs discovered sessions into the store.
-// It runs until the stop channel is closed.
+// Watch periodically scans for Unix sockets and queries their /meta.
 func Watch(sessions *store.Store, interval time.Duration, stop <-chan struct{}) {
+	// Initial scan immediately
+	Scan(sessions)
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -57,13 +33,15 @@ func Watch(sessions *store.Store, interval time.Duration, stop <-chan struct{}) 
 		case <-stop:
 			return
 		case <-ticker.C:
-			scan(sessions)
+			Scan(sessions)
 		}
 	}
 }
 
-func scan(sessions *store.Store) {
-	entries, err := os.ReadDir(MetaDir)
+// Scan finds all .sock files and queries each runner's /meta endpoint.
+// Reachable sockets → upsert session. Unreachable → remove + cleanup.
+func Scan(sessions *store.Store) {
+	entries, err := os.ReadDir(SocketDir)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			log.Printf("discovery: read dir: %v", err)
@@ -74,33 +52,79 @@ func scan(sessions *store.Store) {
 	seen := make(map[string]bool)
 
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sock") {
 			continue
 		}
 
-		data, err := os.ReadFile(filepath.Join(MetaDir, entry.Name()))
+		sockPath := filepath.Join(SocketDir, entry.Name())
+		sessionID := strings.TrimSuffix(entry.Name(), ".sock")
+
+		sess, err := queryMeta(sockPath)
 		if err != nil {
+			// Socket unreachable — stale, clean up
+			log.Printf("discovery: %s unreachable, removing: %v", sessionID, err)
+			os.Remove(sockPath)
+			sessions.Remove(sessionID)
 			continue
 		}
 
-		var meta metaFile
-		if err := json.Unmarshal(data, &meta); err != nil {
-			continue
-		}
+		seen[sess.ID] = true
+		sessions.Upsert(*sess)
+	}
 
-		if meta.SessionID == "" || meta.Version != 1 {
-			continue
-		}
-
-		seen[meta.SessionID] = true
-
-		existing, exists := sessions.Get(meta.SessionID)
-		sess := toSession(meta)
-
-		if !exists {
-			sessions.Upsert(sess)
-		} else if existing.State != sess.State || existing.UpdatedAt < sess.UpdatedAt {
-			sessions.Upsert(sess)
+	// Remove sessions whose sockets no longer exist
+	for _, s := range sessions.List() {
+		if !seen[s.ID] && s.SocketPath != "" {
+			// Check if socket file still exists
+			if _, err := os.Stat(s.SocketPath); os.IsNotExist(err) {
+				sessions.Remove(s.ID)
+			}
 		}
 	}
+}
+
+// Register handles a registration request from gmux-run.
+// Immediately queries the runner's /meta and adds to store.
+func Register(sessions *store.Store, socketPath string) error {
+	sess, err := queryMeta(socketPath)
+	if err != nil {
+		return err
+	}
+	sessions.Upsert(*sess)
+	return nil
+}
+
+// queryMeta connects to a runner's Unix socket and fetches GET /meta.
+func queryMeta(socketPath string) (*store.Session, error) {
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return net.DialTimeout("unix", socketPath, 2*time.Second)
+			},
+		},
+		Timeout: 3 * time.Second,
+	}
+
+	resp, err := client.Get("http://localhost/meta")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err != nil {
+		return nil, err
+	}
+
+	var sess store.Session
+	if err := json.Unmarshal(body, &sess); err != nil {
+		return nil, err
+	}
+
+	// Ensure socket_path is set (runner might not include it)
+	if sess.SocketPath == "" {
+		sess.SocketPath = socketPath
+	}
+
+	return &sess, nil
 }

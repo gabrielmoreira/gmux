@@ -1,43 +1,50 @@
 import { z } from 'zod'
 
-export const SessionStateSchema = z.enum([
-  'starting',
-  'running',
-  'waiting',
-  'idle',
-  'exited',
+// Schema v2 — matches gmux-run's GET /meta and gmuxd's store.Session
+
+export const StatusStateSchema = z.enum([
+  'active',
+  'attention',
+  'success',
   'error',
+  'paused',
+  'info',
 ])
 
-export const SessionSummarySchema = z.object({
-  session_id: z.string().min(1),
-  abduco_name: z.string().min(1),
+export const SessionStatusSchema = z.object({
+  label: z.string(),
+  state: StatusStateSchema,
+  icon: z.string().optional(),
+}).nullable()
+
+export const SessionSchema = z.object({
+  id: z.string().min(1),
+  created_at: z.string().optional(),
+  command: z.array(z.string()).optional(),
+  cwd: z.string().optional(),
+  kind: z.string().default('generic'),
+  alive: z.boolean(),
+  pid: z.number().optional().nullable(),
+  exit_code: z.number().optional().nullable(),
+  started_at: z.string().optional(),
+  exited_at: z.string().optional().nullable(),
   title: z.string().optional(),
-  kind: z.enum(['pi', 'generic', 'opencode']).default('pi'),
-  state: SessionStateSchema,
-  updated_at: z.number(),
+  subtitle: z.string().optional(),
+  status: SessionStatusSchema.optional().nullable(),
+  unread: z.boolean().optional().default(false),
+  socket_path: z.string().optional(),
 })
 
 export const AttachResponseSchema = z.object({
-  transport: z.enum(['ttyd']),
-  port: z.number().int().positive(),
-  is_new: z.boolean(),
-  token: z.string().optional(),
+  transport: z.enum(['websocket']),
+  ws_path: z.string(),
+  socket_path: z.string().optional(),
 })
 
-export const SessionMetadataSchema = z.object({
-  version: z.literal(1),
-  session_id: z.string().min(1),
-  abduco_name: z.string().min(1),
-  kind: z.enum(['pi', 'generic', 'opencode']),
-  command: z.array(z.string()).min(1),
-  cwd: z.string().min(1),
-  state: SessionStateSchema,
-  created_at: z.number(),
-  updated_at: z.number(),
-})
-
-export type SessionState = z.infer<typeof SessionStateSchema>
-export type SessionSummary = z.infer<typeof SessionSummarySchema>
+// Legacy aliases for backward compatibility during migration
+export const SessionSummarySchema = SessionSchema
+export type SessionSummary = z.infer<typeof SessionSchema>
+export type Session = z.infer<typeof SessionSchema>
+export type SessionStatus = z.infer<typeof SessionStatusSchema>
+export type StatusState = z.infer<typeof StatusStateSchema>
 export type AttachResponse = z.infer<typeof AttachResponseSchema>
-export type SessionMetadata = z.infer<typeof SessionMetadataSchema>

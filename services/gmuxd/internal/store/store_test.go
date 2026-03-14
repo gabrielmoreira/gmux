@@ -15,42 +15,41 @@ func TestListEmpty(t *testing.T) {
 func TestUpsertAndGet(t *testing.T) {
 	s := New()
 	s.Upsert(Session{
-		SessionID:  "s1",
-		AbducoName: "pi:test:1",
-		Kind:       "pi",
-		State:      "running",
+		ID:    "s1",
+		Kind:  "pi",
+		Alive: true,
+		Title: "test",
 	})
 
 	got, ok := s.Get("s1")
 	if !ok {
 		t.Fatal("expected session to exist")
 	}
-	if got.State != "running" {
-		t.Fatalf("expected running, got %s", got.State)
+	if !got.Alive {
+		t.Fatal("expected alive")
+	}
+	if got.Title != "test" {
+		t.Fatalf("expected title 'test', got %q", got.Title)
 	}
 }
 
-func TestSetState(t *testing.T) {
+func TestUpsertOverwrite(t *testing.T) {
 	s := New()
-	s.Upsert(Session{SessionID: "s1", Kind: "pi", State: "running"})
+	s.Upsert(Session{ID: "s1", Kind: "pi", Title: "v1"})
+	s.Upsert(Session{ID: "s1", Kind: "pi", Title: "v2"})
 
-	updated, ok := s.SetState("s1", "waiting")
-	if !ok {
-		t.Fatal("expected success")
+	got, _ := s.Get("s1")
+	if got.Title != "v2" {
+		t.Fatalf("expected v2, got %q", got.Title)
 	}
-	if updated.State != "waiting" {
-		t.Fatalf("expected waiting, got %s", updated.State)
-	}
-
-	_, ok = s.SetState("nonexistent", "running")
-	if ok {
-		t.Fatal("expected failure for nonexistent session")
+	if len(s.List()) != 1 {
+		t.Fatal("expected 1 session after overwrite")
 	}
 }
 
 func TestRemove(t *testing.T) {
 	s := New()
-	s.Upsert(Session{SessionID: "s1", Kind: "pi", State: "running"})
+	s.Upsert(Session{ID: "s1", Kind: "pi"})
 
 	if !s.Remove("s1") {
 		t.Fatal("expected remove to succeed")
@@ -68,33 +67,28 @@ func TestSubscribe(t *testing.T) {
 	ch, cancel := s.Subscribe()
 	defer cancel()
 
-	s.Upsert(Session{SessionID: "s1", Kind: "pi", State: "running"})
+	s.Upsert(Session{ID: "s1", Kind: "pi", Alive: true})
 
 	select {
 	case ev := <-ch:
-		if ev.Type != "session-upsert" || ev.SessionID != "s1" {
+		if ev.Type != "session-upsert" || ev.ID != "s1" {
 			t.Fatalf("unexpected event: %+v", ev)
+		}
+		if ev.Session == nil || !ev.Session.Alive {
+			t.Fatal("expected session in event")
 		}
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("timed out waiting for event")
 	}
 
-	s.SetState("s1", "waiting")
+	s.Remove("s1")
 
 	select {
 	case ev := <-ch:
-		if ev.Type != "session-state" || ev.State != "waiting" {
+		if ev.Type != "session-remove" || ev.ID != "s1" {
 			t.Fatalf("unexpected event: %+v", ev)
 		}
 	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timed out waiting for state event")
-	}
-}
-
-func TestSeeds(t *testing.T) {
-	s := NewWithSeeds()
-	list := s.List()
-	if len(list) != 2 {
-		t.Fatalf("expected 2 seeded sessions, got %d", len(list))
+		t.Fatal("timed out waiting for remove event")
 	}
 }

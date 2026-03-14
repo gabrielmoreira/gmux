@@ -1,39 +1,74 @@
 import { describe, expect, it } from 'vitest'
 import {
   SessionEventSchema,
-  SessionStateSchema,
-  SessionSummarySchema,
+  SessionSchema,
+  StatusStateSchema,
   successEnvelope,
 } from './index.js'
 
 describe('protocol schemas', () => {
-  it('parses session summary', () => {
-    const result = SessionSummarySchema.parse({
-      session_id: 'sess-1',
-      abduco_name: 'pi:demo:1',
+  it('parses session (schema v2)', () => {
+    const result = SessionSchema.parse({
+      id: 'sess-1',
       kind: 'pi',
-      state: 'running',
-      updated_at: Date.now() / 1000,
+      alive: true,
+      pid: 12345,
+      title: 'test session',
+      status: { label: 'thinking', state: 'active' },
     })
 
-    expect(result.session_id).toBe('sess-1')
+    expect(result.id).toBe('sess-1')
+    expect(result.alive).toBe(true)
+    expect(result.status?.state).toBe('active')
   })
 
-  it('validates event union by type', () => {
-    const event = SessionEventSchema.parse({
-      type: 'session-state',
-      session_id: 'sess-1',
-      state: 'waiting',
-      updated_at: Date.now() / 1000,
+  it('parses session with null status', () => {
+    const result = SessionSchema.parse({
+      id: 'sess-2',
+      kind: 'generic',
+      alive: false,
+      status: null,
     })
 
-    expect(event.type).toBe('session-state')
-    expect(event.state).toBe('waiting')
+    expect(result.status).toBeNull()
+    expect(result.alive).toBe(false)
+  })
+
+  it('validates session-upsert event', () => {
+    const event = SessionEventSchema.parse({
+      type: 'session-upsert',
+      id: 'sess-1',
+      session: {
+        id: 'sess-1',
+        kind: 'pi',
+        alive: true,
+        status: { label: 'running', state: 'active' },
+      },
+    })
+
+    expect(event.type).toBe('session-upsert')
+    if (event.type === 'session-upsert') {
+      expect(event.session.alive).toBe(true)
+    }
+  })
+
+  it('validates session-remove event', () => {
+    const event = SessionEventSchema.parse({
+      type: 'session-remove',
+      id: 'sess-1',
+    })
+    expect(event.type).toBe('session-remove')
+  })
+
+  it('validates status states', () => {
+    for (const state of ['active', 'attention', 'success', 'error', 'paused', 'info']) {
+      expect(StatusStateSchema.parse(state)).toBe(state)
+    }
   })
 
   it('builds typed success envelopes', () => {
-    const Schema = successEnvelope(SessionStateSchema)
-    const parsed = Schema.parse({ ok: true, data: 'idle' })
-    expect(parsed.data).toBe('idle')
+    const Schema = successEnvelope(StatusStateSchema)
+    const parsed = Schema.parse({ ok: true, data: 'active' })
+    expect(parsed.data).toBe('active')
   })
 })
