@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"syscall"
 
@@ -98,7 +99,7 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	// Ensure socket dir exists and remove stale socket
-	os.MkdirAll("/tmp/gmux-sessions", 0o755)
+	os.MkdirAll(filepath.Dir(cfg.SocketPath), 0o755)
 	os.Remove(cfg.SocketPath)
 
 	listener, err := net.Listen("unix", cfg.SocketPath)

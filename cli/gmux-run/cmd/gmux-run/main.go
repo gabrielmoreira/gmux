@@ -46,7 +46,11 @@ func main() {
 	}
 
 	sessionID := naming.SessionID()
-	sockPath := filepath.Join("/tmp/gmux-sessions", sessionID+".sock")
+	socketDir := os.Getenv("GMUX_SOCKET_DIR")
+	if socketDir == "" {
+		socketDir = "/tmp/gmux-sessions"
+	}
+	sockPath := filepath.Join(socketDir, sessionID+".sock")
 
 	// Resolve adapter — specific adapters first, generic fallback last
 	registry := adapter.NewRegistry()

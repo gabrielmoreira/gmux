@@ -18,7 +18,12 @@ import (
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/store"
 )
 
-const SocketDir = "/tmp/gmux-sessions"
+func socketDir() string {
+	if d := os.Getenv("GMUX_SOCKET_DIR"); d != "" {
+		return d
+	}
+	return "/tmp/gmux-sessions"
+}
 
 // Watch periodically scans for Unix sockets and queries their /meta.
 func Watch(sessions *store.Store, interval time.Duration, stop <-chan struct{}) {
@@ -41,7 +46,8 @@ func Watch(sessions *store.Store, interval time.Duration, stop <-chan struct{}) 
 // Scan finds all .sock files and queries each runner's /meta endpoint.
 // Reachable sockets → upsert session. Unreachable → remove + cleanup.
 func Scan(sessions *store.Store) {
-	entries, err := os.ReadDir(SocketDir)
+	dir := socketDir()
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			log.Printf("discovery: read dir: %v", err)
@@ -56,7 +62,7 @@ func Scan(sessions *store.Store) {
 			continue
 		}
 
-		sockPath := filepath.Join(SocketDir, entry.Name())
+		sockPath := filepath.Join(dir, entry.Name())
 		sessionID := strings.TrimSuffix(entry.Name(), ".sock")
 
 		sess, err := queryMeta(sockPath)
