@@ -2,16 +2,48 @@ import { render } from 'preact'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { AttachAddon } from '@xterm/addon-attach'
+// AttachAddon removed — we wire onmessage/onData manually for reconnect support
 import '@xterm/xterm/css/xterm.css'
 import './styles.css'
+import { attachKeyboardHandler } from './keyboard'
+import { createReplayBuffer } from './replay'
 
 import type { Session, Folder, SessionStatus } from './mock-data'
 import { getMockFolders, groupByFolder } from './mock-data'
+import type { Session as ProtocolSession } from '@gmux/protocol'
 
 // ── Config ──
 
 const USE_MOCK = import.meta.env.VITE_MOCK === '1' || location.search.includes('mock')
+
+/** Map protocol session (partial fields) to UI session (all fields required) */
+function toUISession(s: ProtocolSession): Session {
+  return {
+    id: s.id,
+    created_at: s.created_at ?? new Date().toISOString(),
+    command: s.command ?? [],
+    cwd: s.cwd ?? '',
+    kind: s.kind ?? 'generic',
+    alive: s.alive,
+    pid: s.pid ?? null,
+    exit_code: s.exit_code ?? null,
+    started_at: s.started_at ?? s.created_at ?? new Date().toISOString(),
+    exited_at: s.exited_at ?? null,
+    title: s.title ?? s.command?.[0] ?? 'session',
+    subtitle: s.subtitle ?? '',
+    status: s.status ?? null,
+    unread: s.unread ?? false,
+    socket_path: s.socket_path ?? '',
+  }
+}
+
+async function fetchSessions(): Promise<Session[]> {
+  const resp = await fetch('/trpc/sessions.list')
+  const json = await resp.json()
+  // tRPC wraps in { result: { data: [...] } }
+  const data: ProtocolSession[] = json?.result?.data ?? []
+  return data.map(toUISession)
+}
 
 const NORD_TERM_THEME = {
   background: '#242933',
@@ -272,13 +304,33 @@ function SessionDetail({ session }: { session: Session }) {
   )
 }
 
+/**
+ * Single xterm.js instance with reconnecting WebSocket.
+ *
+ * Architecture: one Terminal lives for the app lifetime. Switching sessions
+ * closes the old WS, clears the terminal, and opens a new WS. The runner's
+ * 128KB scrollback ring buffer replays on connect, so history is preserved
+ * without keeping per-session xterm instances alive.
+ *
+ * Auto-reconnect on WS drop with exponential backoff.
+ * No AttachAddon — we wire onmessage/onData manually so we can reconnect.
+ */
 function TerminalView({ sessionId }: { sessionId: string }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
+  const fitRef = useRef<FitAddon | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const disposed = useRef(false)
+  const currentSessionId = useRef(sessionId)
 
+  // Keep ref in sync so reconnect closure sees latest value
+  currentSessionId.current = sessionId
+
+  // One-time terminal setup
   useEffect(() => {
     if (!containerRef.current || USE_MOCK) return
+    disposed.current = false
 
     const term = new Terminal({
       theme: NORD_TERM_THEME,
@@ -290,40 +342,144 @@ function TerminalView({ sessionId }: { sessionId: string }) {
     term.loadAddon(fitAddon)
     term.open(containerRef.current)
     fitAddon.fit()
+    termRef.current = term
+    fitRef.current = fitAddon
 
-    const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${wsProtocol}//${location.host}/ws/${sessionId}`)
-    ws.binaryType = 'arraybuffer'
-    wsRef.current = ws
-
-    ws.onopen = () => {
-      const attachAddon = new AttachAddon(ws)
-      term.loadAddon(attachAddon)
-      const dims = fitAddon.proposeDimensions()
-      if (dims) {
-        ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }))
+    // Send raw input to PTY — always uses current wsRef
+    const sendInput = (data: string) => {
+      const ws = wsRef.current
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(new TextEncoder().encode(data))
       }
     }
 
+    // Terminal input → WS
+    const dataDisposable = term.onData((data) => sendInput(data))
+
+    // Keyboard handling
+    attachKeyboardHandler(term, sendInput)
+
+    // Auto-focus terminal on any keydown outside of it.
+    // This ensures keyboard input always goes to the terminal
+    // without requiring the user to click it first.
+    const handleGlobalKeydown = (ev: KeyboardEvent) => {
+      const tag = (ev.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      if (containerRef.current?.contains(ev.target as Node)) return
+      term.focus()
+    }
+    window.addEventListener('keydown', handleGlobalKeydown, true)
+
+    // Window resize → fit + send dims
     const onResize = () => {
       fitAddon.fit()
+      const ws = wsRef.current
       const dims = fitAddon.proposeDimensions()
-      if (dims && wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }))
+      if (dims && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }))
       }
     }
     window.addEventListener('resize', onResize)
 
-    termRef.current = term
-
     return () => {
+      disposed.current = true
+      window.removeEventListener('keydown', handleGlobalKeydown, true)
       window.removeEventListener('resize', onResize)
-      ws.close()
+      dataDisposable.dispose()
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
+      wsRef.current?.close()
+      wsRef.current = null
       term.dispose()
       termRef.current = null
+      fitRef.current = null
+    }
+  }, []) // terminal lives for component lifetime
+
+  // WebSocket connection — reconnects on sessionId change or drop
+  useEffect(() => {
+    if (!termRef.current || USE_MOCK) return
+
+    const term = termRef.current
+    const fitAddon = fitRef.current
+    let attempt = 0
+    let intentionalClose = false
+
+    function connect() {
+      if (disposed.current) return
+
+      // Close previous connection
+      if (wsRef.current) {
+        wsRef.current.close()
+        wsRef.current = null
+      }
+
+      // Replay buffer: detects synchronized scrollback replay.
+      // The runner wraps the replay in BSU + reset sequences + scrollback + ESU,
+      // so xterm handles the clear internally as part of the atomic render.
+      // If BSU detected → buffer until ESU, write all at once (xterm renders atomically)
+      // If no BSU → write immediately (old runner / no scrollback)
+      // Frontend never calls term.clear()/term.reset() — all done via escape sequences.
+      const replay = createReplayBuffer((chunks) => {
+        for (const chunk of chunks) term.write(chunk)
+      })
+
+      const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const ws = new WebSocket(`${wsProtocol}//${location.host}/ws/${sessionId}`)
+      ws.binaryType = 'arraybuffer'
+      wsRef.current = ws
+
+      ws.onopen = () => {
+        attempt = 0
+        if (fitAddon) {
+          const dims = fitAddon.proposeDimensions()
+          if (dims) {
+            ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }))
+          }
+        }
+      }
+
+      // WS data → terminal
+      ws.onmessage = (ev) => {
+        const data = ev.data instanceof ArrayBuffer
+          ? new Uint8Array(ev.data)
+          : new TextEncoder().encode(ev.data)
+
+        // During replay: buffer feeds into replay detector which writes to term
+        if (replay.state !== 'done') {
+          replay.push(data)
+          return
+        }
+
+        // Post-replay: write directly
+        term.write(data)
+      }
+
+      ws.onclose = () => {
+        if (disposed.current || intentionalClose) return
+        // Don't reconnect if session switched away
+        if (currentSessionId.current !== sessionId) return
+
+        // Exponential backoff: 500ms, 1s, 2s, 4s, max 8s
+        const delay = Math.min(500 * Math.pow(2, attempt), 8000)
+        attempt++
+        reconnectTimer.current = setTimeout(connect, delay)
+      }
+
+      ws.onerror = () => {
+        // onclose will fire after this, which handles reconnect
+      }
+    }
+
+    connect()
+
+    return () => {
+      intentionalClose = true
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
+      reconnectTimer.current = null
+      wsRef.current?.close()
       wsRef.current = null
     }
-  }, [sessionId])
+  }, [sessionId]) // reconnect when session changes
 
   if (USE_MOCK) {
     return (
@@ -354,7 +510,7 @@ function EmptyState() {
       <div class="empty-state-title">No session selected</div>
       <div class="empty-state-hint">
         Select a session from the sidebar, or launch a new one with{' '}
-        <code>gmux-run pi</code>
+        <code>gmuxr pi</code>
       </div>
     </div>
   )
@@ -409,8 +565,39 @@ function App() {
       const first = attention ?? active ?? allSessions.find(s => s.alive)
       if (first) setSelectedId(first.id)
     } else {
-      // Real data via tRPC / SSE — same as before
-      // TODO: wire up real data
+      // Fetch initial session list
+      fetchSessions().then(list => {
+        setSessions(list)
+        // Auto-select first alive session
+        const attention = list.find(s => s.alive && s.status?.state === 'attention')
+        const active = list.find(s => s.alive && s.status?.state === 'active')
+        const first = attention ?? active ?? list.find(s => s.alive)
+        if (first && !selectedId) setSelectedId(first.id)
+      }).catch(err => console.error('Failed to fetch sessions:', err))
+
+      // Subscribe to SSE for live updates
+      const source = new EventSource('/api/events')
+      source.addEventListener('session-update', (e) => {
+        try {
+          const updated = toUISession(JSON.parse(e.data))
+          setSessions(prev => {
+            const idx = prev.findIndex(s => s.id === updated.id)
+            if (idx >= 0) {
+              const next = [...prev]
+              next[idx] = updated
+              return next
+            }
+            return [...prev, updated]
+          })
+        } catch {}
+      })
+      source.addEventListener('session-remove', (e) => {
+        try {
+          const { id } = JSON.parse(e.data)
+          setSessions(prev => prev.filter(s => s.id !== id))
+        } catch {}
+      })
+      return () => source.close()
     }
   }, [])
 

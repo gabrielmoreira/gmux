@@ -61,9 +61,10 @@ func Handler(resolve SocketResolver) http.HandlerFunc {
 
 		log.Printf("wsproxy: proxying %s via %s", sessionID, sockPath)
 
-		// Increase read limits for terminal data
-		clientConn.SetReadLimit(64 * 1024)
-		backendConn.SetReadLimit(64 * 1024)
+		// Read limits must exceed the scrollback buffer size (128KB)
+		// plus headroom for normal terminal output frames
+		clientConn.SetReadLimit(256 * 1024)
+		backendConn.SetReadLimit(256 * 1024)
 
 		proxyCtx, proxyCancel := context.WithCancel(ctx)
 

@@ -310,7 +310,24 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	if len(snapshot) > 0 {
-		if err := conn.Write(ctx, websocket.MessageBinary, snapshot); err != nil {
+		// Wrap scrollback replay in synchronized output (DEC 2026) so xterm
+		// renders the entire replay as one atomic frame — no flicker.
+		//
+		// Inside the sync block we include terminal reset sequences so xterm
+		// clears its internal state before writing the scrollback. This means
+		// the frontend never needs to call clear()/reset() — the old content
+		// is replaced atomically when xterm processes ESU.
+		//
+		// Sequence: BSU → reset(scroll region, cursor home, erase all) → scrollback → ESU
+		bsu := []byte("\x1b[?2026h")                      // Begin Synchronized Update
+		resetSeq := []byte("\x1b[r\x1b[H\x1b[2J\x1b[3J") // Reset scroll region + cursor home + erase display + erase scrollback
+		esu := []byte("\x1b[?2026l")                       // End Synchronized Update
+		frame := make([]byte, 0, len(bsu)+len(resetSeq)+len(snapshot)+len(esu))
+		frame = append(frame, bsu...)
+		frame = append(frame, resetSeq...)
+		frame = append(frame, snapshot...)
+		frame = append(frame, esu...)
+		if err := conn.Write(ctx, websocket.MessageBinary, frame); err != nil {
 			s.mu.Lock()
 			delete(s.clients, client)
 			s.mu.Unlock()
