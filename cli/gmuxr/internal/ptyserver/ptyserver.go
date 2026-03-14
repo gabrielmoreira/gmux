@@ -42,8 +42,9 @@ type Server struct {
 	adapter    adapter.Adapter
 	state      *session.State
 
-	mu      sync.Mutex
-	clients map[*wsClient]struct{}
+	mu       sync.Mutex
+	clients  map[*wsClient]struct{}
+	localOut io.Writer // optional local terminal output sink
 
 	done chan struct{} // closed when child exits
 	err  error        // child exit error
@@ -88,6 +89,16 @@ func New(cfg Config) (*Server, error) {
 	cmd := exec.Command(cfg.Command[0], cfg.Command[1:]...)
 	cmd.Dir = cfg.Cwd
 	cmd.Env = append(os.Environ(), cfg.Env...)
+	// Advertise terminal capabilities to child processes.
+	// Our frontend (xterm.js + image addon) supports kitty graphics, sixel, and iTerm2 images.
+	// Set KITTY_WINDOW_ID so programs that check for kitty graphics support (e.g. pi, viu)
+	// will use it. This is legitimate — our terminal genuinely handles the kitty protocol.
+	cmd.Env = append(cmd.Env,
+		"TERM_PROGRAM=gmuxr",
+		"TERM_PROGRAM_VERSION=0.1.0",
+		"COLORTERM=truecolor",
+		"KITTY_WINDOW_ID=1",
+	)
 
 	// Start command in a new PTY
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
@@ -155,6 +166,24 @@ func (s *Server) ExitCode() int {
 		return exitErr.ExitCode()
 	}
 	return 1
+}
+
+// SetLocalOutput sets a writer that receives a copy of all PTY output.
+// Used for transparent local terminal attach. Pass nil to detach.
+func (s *Server) SetLocalOutput(w io.Writer) {
+	s.mu.Lock()
+	s.localOut = w
+	s.mu.Unlock()
+}
+
+// WritePTY writes raw bytes to the PTY input (as if typed by the user).
+func (s *Server) WritePTY(p []byte) (int, error) {
+	return s.ptmx.Write(p)
+}
+
+// Resize changes the PTY window size and signals the child.
+func (s *Server) Resize(cols, rows uint16) {
+	s.resize(cols, rows)
 }
 
 // Shutdown closes the listener and all connections.
@@ -408,11 +437,17 @@ func (s *Server) readPTY() {
 			// Store in scrollback (under lock with broadcast to avoid gaps)
 			s.mu.Lock()
 			s.scrollback.Write(data)
+			localOut := s.localOut
 			clients := make([]*wsClient, 0, len(s.clients))
 			for c := range s.clients {
 				clients = append(clients, c)
 			}
 			s.mu.Unlock()
+
+			// Write to local terminal (if attached)
+			if localOut != nil {
+				localOut.Write(data)
+			}
 
 			for _, c := range clients {
 				if err := c.conn.Write(c.ctx, websocket.MessageBinary, data); err != nil {
