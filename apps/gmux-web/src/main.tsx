@@ -536,14 +536,23 @@ function TerminalView({ sessionId }: { sessionId: string }) {
     }
     window.addEventListener('keydown', handleGlobalKeydown, true)
 
-    // Window resize → fit + send dims
-    const onResize = () => {
-      fitAddon.fit()
+    // Window resize → fit + send dims (including pixel size for image protocols)
+    const sendResize = () => {
       const ws = wsRef.current
       const dims = fitAddon.proposeDimensions()
       if (dims && ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }))
+        const el = term.element
+        const msg: Record<string, unknown> = { type: 'resize', cols: dims.cols, rows: dims.rows }
+        if (el) {
+          msg.pixelWidth = el.clientWidth
+          msg.pixelHeight = el.clientHeight
+        }
+        ws.send(JSON.stringify(msg))
       }
+    }
+    const onResize = () => {
+      fitAddon.fit()
+      sendResize()
     }
     window.addEventListener('resize', onResize)
 
@@ -596,12 +605,7 @@ function TerminalView({ sessionId }: { sessionId: string }) {
 
       ws.onopen = () => {
         attempt = 0
-        if (fitAddon) {
-          const dims = fitAddon.proposeDimensions()
-          if (dims) {
-            ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }))
-          }
-        }
+        sendResize()
       }
 
       // WS data → terminal

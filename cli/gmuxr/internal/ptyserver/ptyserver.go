@@ -27,9 +27,11 @@ const defaultScrollbackSize = 128 * 1024 // 128KB
 
 // ResizeMsg is the JSON message clients send to resize the terminal.
 type ResizeMsg struct {
-	Type string `json:"type"`
-	Cols uint16 `json:"cols"`
-	Rows uint16 `json:"rows"`
+	Type       string `json:"type"`
+	Cols       uint16 `json:"cols"`
+	Rows       uint16 `json:"rows"`
+	PixelWidth uint16 `json:"pixelWidth,omitempty"`
+	PixelHeight uint16 `json:"pixelHeight,omitempty"`
 }
 
 // Server holds a PTY and serves WebSocket connections.
@@ -183,7 +185,7 @@ func (s *Server) WritePTY(p []byte) (int, error) {
 
 // Resize changes the PTY window size and signals the child.
 func (s *Server) Resize(cols, rows uint16) {
-	s.resize(cols, rows)
+	s.resize(cols, rows, 0, 0)
 }
 
 // Shutdown closes the listener and all connections.
@@ -390,7 +392,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		if typ == websocket.MessageText {
 			var msg ResizeMsg
 			if json.Unmarshal(data, &msg) == nil && msg.Type == "resize" {
-				s.resize(msg.Cols, msg.Rows)
+				s.resize(msg.Cols, msg.Rows, msg.PixelWidth, msg.PixelHeight)
 				continue
 			}
 		}
@@ -402,11 +404,16 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) resize(cols, rows uint16) {
+func (s *Server) resize(cols, rows, pixelWidth, pixelHeight uint16) {
 	if cols == 0 || rows == 0 {
 		return
 	}
-	pty.Setsize(s.ptmx, &pty.Winsize{Cols: cols, Rows: rows})
+	pty.Setsize(s.ptmx, &pty.Winsize{
+		Cols: cols,
+		Rows: rows,
+		X:    pixelWidth,
+		Y:    pixelHeight,
+	})
 
 	// Send SIGWINCH to the child process group
 	if s.cmd.Process != nil {
