@@ -1,0 +1,559 @@
+---
+// gmux landing page — dark, minimal, confident
+---
+
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>gmux — monitor every agent, test runner, and process</title>
+  <meta name="description" content="Keep tabs on every AI agent, test runner, and long-running process across your machines. Work from your desktop, steer from your phone." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Source+Sans+3:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <!-- Nav -->
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="nav-logo">gmux</a>
+      <div class="nav-links">
+        <a href="/introduction">Docs</a>
+        <a href="https://github.com/gmuxapp/gmux" class="nav-github">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-content">
+      <div class="hero-text">
+        <h1>Monitor every agent, test runner, and process</h1>
+        <p class="hero-sub">
+          Live terminals in the browser. Grouped by project.
+          Status that tells you what needs attention.
+          No tmux, no Electron — two binaries and a browser tab.
+        </p>
+        <div class="hero-actions">
+          <a href="/quick-start" class="hero-cta">Get started</a>
+          <a href="https://github.com/gmuxapp/gmux" class="hero-secondary">View on GitHub →</a>
+        </div>
+      </div>
+      <div class="hero-terminal">
+        <div class="terminal-chrome">
+          <div class="terminal-dots">
+            <span></span><span></span><span></span>
+          </div>
+          <span class="terminal-title">gmux — localhost:5173</span>
+        </div>
+        <div class="terminal-body">
+          <div class="terminal-sidebar">
+            <div class="sidebar-group">
+              <div class="sidebar-folder">
+                <span class="folder-arrow">▼</span>
+                <span class="folder-name">myapp</span>
+                <span class="folder-badge active">● 2</span>
+              </div>
+              <div class="folder-meta">main · 3 changed · PR #42</div>
+              <div class="sidebar-session">
+                <span class="session-dot active"></span>
+                <div class="session-info">
+                  <span class="session-name">fix auth bug</span>
+                  <span class="session-detail">thinking · pi</span>
+                </div>
+                <span class="session-time">now</span>
+              </div>
+              <div class="sidebar-session">
+                <span class="session-dot success"></span>
+                <div class="session-info">
+                  <span class="session-name">test watcher</span>
+                  <span class="session-detail">47/47 passing · pytest</span>
+                </div>
+                <span class="session-time">2m</span>
+              </div>
+            </div>
+            <div class="sidebar-group">
+              <div class="sidebar-folder">
+                <span class="folder-arrow">▼</span>
+                <span class="folder-name">gmux</span>
+                <span class="folder-badge attention">● 1</span>
+              </div>
+              <div class="folder-meta">feature/probes · clean</div>
+              <div class="sidebar-session">
+                <span class="session-dot attention"></span>
+                <div class="session-info">
+                  <span class="session-name">bootstrap</span>
+                  <span class="session-detail">waiting for input · pi</span>
+                </div>
+                <span class="session-time">5m</span>
+              </div>
+            </div>
+            <div class="sidebar-group collapsed">
+              <div class="sidebar-folder">
+                <span class="folder-arrow">▸</span>
+                <span class="folder-name">docs</span>
+                <span class="folder-badge idle">○ 1</span>
+              </div>
+            </div>
+          </div>
+          <div class="terminal-main">
+            <div class="terminal-header-bar">
+              <span class="header-session-name">fix auth bug</span>
+              <span class="header-adapter">pi adapter</span>
+              <span class="header-status">● thinking</span>
+            </div>
+            <div class="terminal-output">
+              <span class="t-prompt">$</span> <span class="t-cmd">gmuxr pi</span>
+              <br/>
+              <span class="t-dim">Session started · PID 48291 · pty /dev/pts/3</span>
+              <br/><br/>
+              <span class="t-accent">●</span> <span class="t-text">Analyzing auth middleware...</span>
+              <br/>
+              <span class="t-dim">  Reading src/middleware/auth.ts</span>
+              <br/>
+              <span class="t-dim">  Reading src/lib/jwt.ts</span>
+              <br/>
+              <span class="t-dim">  Reading src/routes/login.ts</span>
+              <br/><br/>
+              <span class="t-accent">●</span> <span class="t-text">Found the issue — token refresh</span>
+              <br/>
+              <span class="t-text">  race condition in concurrent</span>
+              <br/>
+              <span class="t-text">  requests. Fixing now...</span>
+              <br/><br/>
+              <span class="t-cursor"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <span class="footer-logo">gmux</span>
+      <div class="footer-links">
+        <a href="/introduction">Docs</a>
+        <a href="https://github.com/gmuxapp/gmux">GitHub</a>
+        <span class="footer-sep">·</span>
+        <span class="footer-license">MIT License</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
+
+<style>
+  /* ============================================
+     gmux landing page
+     Dark, minimal, confident
+     ============================================ */
+
+  *, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  :root {
+    --bg: oklch(13% 0.015 250);
+    --bg-raised: oklch(16% 0.015 250);
+    --bg-surface: oklch(19% 0.015 250);
+    --text: oklch(88% 0.01 250);
+    --text-secondary: oklch(65% 0.01 250);
+    --text-muted: oklch(48% 0.01 250);
+    --accent: oklch(72% 0.1 195);
+    --border: oklch(22% 0.015 250);
+    --border-subtle: oklch(19% 0.01 250);
+    --green: oklch(72% 0.14 145);
+    --amber: oklch(76% 0.14 85);
+    --radius: 8px;
+  }
+
+  html {
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    line-height: 1.6;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  h1, h2, h3 {
+    font-family: 'Instrument Sans', sans-serif;
+    line-height: 1.15;
+    letter-spacing: -0.025em;
+  }
+
+  a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9em;
+  }
+
+  /* --- Nav --- */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: oklch(13% 0.015 250 / 0.8);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .nav-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 clamp(1.5rem, 4vw, 3rem);
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .nav-logo {
+    font-family: 'Instrument Sans', sans-serif;
+    font-weight: 700;
+    font-size: 1.2rem;
+    color: var(--text);
+    letter-spacing: -0.04em;
+  }
+  .nav-logo:hover { text-decoration: none; }
+
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+  }
+
+  .nav-links a {
+    color: var(--text-secondary);
+    font-size: 0.92rem;
+    font-weight: 500;
+    transition: color 0.15s;
+  }
+  .nav-links a:hover {
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  .nav-github {
+    display: flex;
+    align-items: center;
+    color: var(--text-muted) !important;
+  }
+  .nav-github:hover { color: var(--text) !important; }
+
+  /* --- Hero --- */
+  .hero {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    padding: clamp(3rem, 6vw, 5rem) 0;
+  }
+
+  .hero-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 clamp(1.5rem, 4vw, 3rem);
+    display: grid;
+    grid-template-columns: 1fr 1.3fr;
+    gap: clamp(2.5rem, 5vw, 5rem);
+    align-items: center;
+    width: 100%;
+  }
+
+  .hero h1 {
+    font-size: clamp(1.85rem, 3.5vw, 2.75rem);
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 1rem;
+  }
+
+  .hero-sub {
+    font-size: clamp(1rem, 1.2vw, 1.1rem);
+    color: var(--text-secondary);
+    max-width: 42ch;
+    line-height: 1.7;
+    margin-bottom: 2rem;
+  }
+
+  .hero-actions {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+  }
+
+  .hero-cta {
+    font-family: 'Instrument Sans', sans-serif;
+    font-weight: 600;
+    font-size: 0.92rem;
+    color: var(--bg);
+    background: var(--text);
+    padding: 0.55rem 1.3rem;
+    border-radius: 6px;
+    transition: opacity 0.15s;
+  }
+  .hero-cta:hover {
+    text-decoration: none;
+    opacity: 0.85;
+  }
+
+  .hero-secondary {
+    font-size: 0.92rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+  .hero-secondary:hover {
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  /* --- Terminal Mockup --- */
+  .hero-terminal {
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--bg-raised);
+  }
+
+  .terminal-chrome {
+    background: oklch(17% 0.012 250);
+    padding: 0.55rem 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .terminal-dots {
+    display: flex;
+    gap: 5px;
+  }
+
+  .terminal-dots span {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: oklch(28% 0.01 250);
+  }
+
+  .terminal-title {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-family: 'Source Sans 3', sans-serif;
+  }
+
+  .terminal-body {
+    display: grid;
+    grid-template-columns: 210px 1fr;
+    min-height: 320px;
+  }
+
+  /* Sidebar */
+  .terminal-sidebar {
+    background: oklch(14% 0.012 250);
+    padding: 0.6rem 0;
+    border-right: 1px solid var(--border);
+    font-size: 0.76rem;
+    font-family: 'Source Sans 3', sans-serif;
+    color: oklch(65% 0.01 250);
+  }
+
+  .sidebar-group { padding: 0.2rem 0; }
+
+  .sidebar-group + .sidebar-group {
+    border-top: 1px solid oklch(20% 0.01 250);
+    margin-top: 0.2rem;
+    padding-top: 0.4rem;
+  }
+
+  .sidebar-folder {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.65rem;
+    font-weight: 600;
+    color: oklch(75% 0.01 250);
+  }
+
+  .folder-arrow {
+    font-size: 0.6rem;
+    width: 0.7rem;
+    color: oklch(45% 0.01 250);
+  }
+  .folder-name { flex: 1; }
+
+  .folder-badge { font-size: 0.68rem; font-weight: 500; }
+  .folder-badge.active { color: var(--green); }
+  .folder-badge.attention { color: var(--amber); }
+  .folder-badge.idle { color: var(--text-muted); }
+
+  .folder-meta {
+    padding: 0 0.65rem 0.2rem 1.7rem;
+    font-size: 0.68rem;
+    color: oklch(42% 0.01 250);
+  }
+
+  .sidebar-session {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+    padding: 0.3rem 0.65rem 0.3rem 1.7rem;
+  }
+
+  .session-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    margin-top: 0.4rem;
+    flex-shrink: 0;
+  }
+  .session-dot.active, .session-dot.success { background: var(--green); }
+  .session-dot.attention { background: var(--amber); }
+
+  .session-info { flex: 1; min-width: 0; }
+  .session-name {
+    display: block;
+    color: oklch(75% 0.01 250);
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .session-detail {
+    display: block;
+    color: oklch(42% 0.01 250);
+    font-size: 0.68rem;
+  }
+  .session-time {
+    color: oklch(38% 0.01 250);
+    font-size: 0.68rem;
+    flex-shrink: 0;
+    margin-top: 0.15rem;
+  }
+
+  /* Terminal main area */
+  .terminal-main { display: flex; flex-direction: column; }
+
+  .terminal-header-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.45rem 0.9rem;
+    background: oklch(17% 0.012 250);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.76rem;
+    font-family: 'Source Sans 3', sans-serif;
+  }
+
+  .header-session-name { color: oklch(78% 0.01 250); font-weight: 600; }
+  .header-adapter { color: oklch(45% 0.01 250); }
+  .header-status { margin-left: auto; color: var(--green); font-weight: 500; }
+
+  .terminal-output {
+    padding: 0.9rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    line-height: 1.65;
+    color: oklch(70% 0.01 250);
+    flex: 1;
+  }
+
+  .t-prompt { color: var(--accent); }
+  .t-cmd { color: oklch(85% 0.01 250); font-weight: 500; }
+  .t-dim { color: oklch(40% 0.01 250); }
+  .t-accent { color: var(--green); }
+  .t-text { color: oklch(75% 0.01 250); }
+
+  .t-cursor {
+    display: inline-block;
+    width: 7px;
+    height: 13px;
+    background: var(--accent);
+    animation: blink 1.2s step-end infinite;
+    vertical-align: text-bottom;
+  }
+
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* --- Footer --- */
+  .footer {
+    padding: 2rem 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .footer-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 clamp(1.5rem, 4vw, 3rem);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .footer-logo {
+    font-family: 'Instrument Sans', sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--text-muted);
+    letter-spacing: -0.04em;
+  }
+
+  .footer-links {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-size: 0.85rem;
+  }
+  .footer-links a { color: var(--text-secondary); }
+  .footer-sep { color: var(--text-muted); }
+  .footer-license { color: var(--text-muted); }
+
+  /* --- Responsive --- */
+  @media (max-width: 900px) {
+    .hero-content {
+      grid-template-columns: 1fr;
+      gap: 2.5rem;
+    }
+    .hero-terminal {
+      max-width: 540px;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .hero h1 { font-size: 1.65rem; }
+    .hero-actions { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
+    .terminal-body { grid-template-columns: 1fr; }
+    .terminal-sidebar { display: none; }
+  }
+
+  /* --- Entry animation --- */
+  @media (prefers-reduced-motion: no-preference) {
+    .hero-text { animation: fadeUp 0.5s ease-out both; }
+    .hero-terminal { animation: fadeUp 0.5s 0.1s ease-out both; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  }
+</style>

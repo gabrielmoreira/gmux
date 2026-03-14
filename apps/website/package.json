@@ -1,0 +1,17 @@
+{
+  "name": "@gmux/website",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^6.3.1",
+    "@astrojs/starlight": "^0.38.1",
+    "astro": "^6.0.4",
+    "sharp": "^0.34.5"
+  }
+}
