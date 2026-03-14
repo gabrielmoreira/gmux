@@ -58,11 +58,11 @@ importers:
         specifier: ^11.6.0
         version: 11.12.0(@trpc/server@11.12.0(typescript@5.9.3))(typescript@5.9.3)
       '@xterm/addon-fit':
-        specifier: file:vendor/xterm-addon-fit-0.11.0.tgz
-        version: file:apps/gmux-web/vendor/xterm-addon-fit-0.11.0.tgz
+        specifier: 0.12.0-beta.195
+        version: 0.12.0-beta.195(@xterm/xterm@6.1.0-beta.195)
       '@xterm/xterm':
-        specifier: file:vendor/xterm-xterm-6.0.0.tgz
-        version: file:apps/gmux-web/vendor/xterm-xterm-6.0.0.tgz
+        specifier: 6.1.0-beta.195
+        version: 6.1.0-beta.195
       preact:
         specifier: ^10.26.4
         version: 10.29.0
@@ -1199,13 +1199,13 @@ packages:
   '@vitest/utils@3.2.4':
     resolution: {integrity: sha512-fB2V0JFrQSMsCo9HiSq3Ezpdv4iYaXRG1Sx8edX3MwxfyNn83mKiGzOcH+Fkxt4MHxr3y42fQi1oeAInqgX2QA==}
 
-  '@xterm/addon-fit@file:apps/gmux-web/vendor/xterm-addon-fit-0.11.0.tgz':
-    resolution: {integrity: sha512-ufrSIYEU9ngL1jALT0FMoXnCUPcMOyfzwkcoaPo656voLoGXZO0cKHqPRJ8UZvEqFHwxurYjbAa3f9hixgrY2g==, tarball: file:apps/gmux-web/vendor/xterm-addon-fit-0.11.0.tgz}
-    version: 0.11.0
+  '@xterm/addon-fit@0.12.0-beta.195':
+    resolution: {integrity: sha512-Ihc+azRK3HFB2NVBEoWRkEUGYVxoojK2X4Jx6YxiRKdAu6bYzDTzTImE/0EDOjjz2AUUqddRwCUdSbz2/WvYfA==}
+    peerDependencies:
+      '@xterm/xterm': ^6.1.0-beta.195
 
-  '@xterm/xterm@file:apps/gmux-web/vendor/xterm-xterm-6.0.0.tgz':
-    resolution: {integrity: sha512-8R+KafnyfMrU++2otuv8/QgGaPwjg4G2udeUGP8SJKp09hdRoHl/MGd41NXuMEgtuHDEd+5kpLQkQFHy4/nkIw==, tarball: file:apps/gmux-web/vendor/xterm-xterm-6.0.0.tgz}
-    version: 6.0.0
+  '@xterm/xterm@6.1.0-beta.195':
+    resolution: {integrity: sha512-lLVfI3T4pX4W4qrbf2Qhdq5Pa00FkOOUz9vlOm6f1r5wel1mUafeJL8zacfsUVdc03MsCKHRyZkLubmDEnabcw==}
 
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
@@ -3523,9 +3523,11 @@ snapshots:
       loupe: 3.2.1
       tinyrainbow: 2.0.0
 
-  '@xterm/addon-fit@file:apps/gmux-web/vendor/xterm-addon-fit-0.11.0.tgz': {}
+  '@xterm/addon-fit@0.12.0-beta.195(@xterm/xterm@6.1.0-beta.195)':
+    dependencies:
+      '@xterm/xterm': 6.1.0-beta.195
 
-  '@xterm/xterm@file:apps/gmux-web/vendor/xterm-xterm-6.0.0.tgz': {}
+  '@xterm/xterm@6.1.0-beta.195': {}
 
   acorn-jsx@5.3.2(acorn@8.16.0):
     dependencies:
