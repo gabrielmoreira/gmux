@@ -36,6 +36,9 @@ export const SessionSchema = z.object({
   resume_key: z.string().optional(),
   close_action: z.enum(['minimize', 'dismiss']).optional(),
   socket_path: z.string().optional(),
+  resize_owner_id: z.string().optional(),
+  terminal_cols: z.number().int().positive().optional(),
+  terminal_rows: z.number().int().positive().optional(),
 })
 
 export const AttachResponseSchema = z.object({

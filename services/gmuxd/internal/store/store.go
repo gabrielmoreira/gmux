@@ -7,24 +7,27 @@ import (
 
 // Session matches the schema v2 model served by gmux-run's GET /meta.
 type Session struct {
-	ID         string  `json:"id"`
-	CreatedAt  string  `json:"created_at,omitempty"`
-	Command    []string `json:"command,omitempty"`
-	Cwd        string  `json:"cwd,omitempty"`
-	Kind       string  `json:"kind"`
-	Alive      bool    `json:"alive"`
-	Pid        int     `json:"pid,omitempty"`
-	ExitCode   *int    `json:"exit_code,omitempty"`
-	StartedAt  string  `json:"started_at,omitempty"`
-	ExitedAt   string  `json:"exited_at,omitempty"`
-	Title      string  `json:"title,omitempty"`
-	Subtitle   string  `json:"subtitle,omitempty"`
-	Status     *Status `json:"status"`
-	Unread     bool    `json:"unread"`
-	Resumable   bool   `json:"resumable,omitempty"`
-	ResumeKey   string `json:"resume_key,omitempty"`
-	CloseAction string `json:"close_action,omitempty"` // "minimize" (kill but keep resumable) or "dismiss" (remove)
-	SocketPath  string `json:"socket_path,omitempty"`
+	ID            string   `json:"id"`
+	CreatedAt     string   `json:"created_at,omitempty"`
+	Command       []string `json:"command,omitempty"`
+	Cwd           string   `json:"cwd,omitempty"`
+	Kind          string   `json:"kind"`
+	Alive         bool     `json:"alive"`
+	Pid           int      `json:"pid,omitempty"`
+	ExitCode      *int     `json:"exit_code,omitempty"`
+	StartedAt     string   `json:"started_at,omitempty"`
+	ExitedAt      string   `json:"exited_at,omitempty"`
+	Title         string   `json:"title,omitempty"`
+	Subtitle      string   `json:"subtitle,omitempty"`
+	Status        *Status  `json:"status"`
+	Unread        bool     `json:"unread"`
+	Resumable     bool     `json:"resumable,omitempty"`
+	ResumeKey     string   `json:"resume_key,omitempty"`
+	CloseAction   string   `json:"close_action,omitempty"`
+	SocketPath    string   `json:"socket_path,omitempty"`
+	ResizeOwnerID string   `json:"resize_owner_id,omitempty"`
+	TerminalCols  uint16   `json:"terminal_cols,omitempty"`
+	TerminalRows  uint16   `json:"terminal_rows,omitempty"`
 }
 
 // Status is the application-reported status per schema v2.
@@ -35,8 +38,8 @@ type Status struct {
 }
 
 type Event struct {
-	Type string  `json:"type"` // session-upsert, session-remove
-	ID   string  `json:"id"`
+	Type string `json:"type"` // session-upsert, session-remove
+	ID   string `json:"id"`
 
 	// Present for session-upsert
 	Session *Session `json:"session,omitempty"`
@@ -93,6 +96,27 @@ func (s *Store) Upsert(sess Session) {
 		ID:      sess.ID,
 		Session: &sess,
 	})
+}
+
+func (s *Store) SetResizeState(id, deviceID string, cols, rows uint16) bool {
+	s.mu.Lock()
+	sess, ok := s.sessions[id]
+	if !ok {
+		s.mu.Unlock()
+		return false
+	}
+	sess.ResizeOwnerID = deviceID
+	sess.TerminalCols = cols
+	sess.TerminalRows = rows
+	s.sessions[id] = sess
+	s.mu.Unlock()
+
+	s.broadcast(Event{
+		Type:    "session-upsert",
+		ID:      sess.ID,
+		Session: &sess,
+	})
+	return true
 }
 
 func (s *Store) Remove(id string) bool {

@@ -64,4 +64,20 @@ describe('gmuxd client', () => {
     expect(attach.transport).toBe('websocket')
     expect(attach.ws_path).toBe('/ws/sess-1')
   })
+
+  it('calls resize owner endpoint', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) }))
+    global.fetch = fetchMock as any
+
+    const client = createGmuxdClient('http://localhost:8790')
+    await client.setResizeOwner('sess-1', 'device-1', 120, 40)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:8790/v1/sessions/sess-1/resize-owner',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+  })
 })

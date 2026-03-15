@@ -15,11 +15,17 @@ describe('protocol schemas', () => {
       pid: 12345,
       title: 'test session',
       status: { label: 'thinking', state: 'active' },
+      resize_owner_id: 'device-1',
+      terminal_cols: 120,
+      terminal_rows: 40,
     })
 
     expect(result.id).toBe('sess-1')
     expect(result.alive).toBe(true)
     expect(result.status?.state).toBe('active')
+    expect(result.resize_owner_id).toBe('device-1')
+    expect(result.terminal_cols).toBe(120)
+    expect(result.terminal_rows).toBe(40)
   })
 
   it('parses session with null status', () => {
