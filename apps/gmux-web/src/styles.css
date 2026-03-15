@@ -537,7 +537,34 @@ body {
   flex: 1;
   position: relative;
   overflow: hidden;
-  background: #0f141a; /* match TERM_THEME.background (--bg-surface) */
+  background: #0f141a;
+}
+
+.terminal-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #0f141a;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-family: 'JetBrains Mono', monospace;
+  z-index: 10;
+}
+
+.terminal-loading-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
 }
 
 /* Use JetBrains Mono for italic glyphs since Fira Code has no italic variant */
