@@ -246,7 +246,7 @@ const TERM_THEME = {
   foreground: '#d3d8de',            // --text
   cursor: '#d3d8de',                // --text
   cursorAccent: '#0f141a',          // --bg-surface
-  selectionBackground: '#141b24cc', // --bg-selected + alpha
+  selectionBackground: '#2a3a4acc', // visible selection with slight blue tint
   black: '#151b21',                 // --border
   red: '#c25d66',
   green: '#a3be8c',
