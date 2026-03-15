@@ -375,7 +375,6 @@ function FolderGroup({
   onHideFolder: (cwd: string) => void
   isSessionVisible: (session: Session) => boolean
 }) {
-  const [expanded, setExpanded] = useState(true)
   const [showMore, setShowMore] = useState(false)
   const hasWorking = folderHasWorkingSessions(folder)
   const hasUnread = folderHasUnreadSessions(folder)
@@ -390,54 +389,51 @@ function FolderGroup({
 
   return (
     <div class="folder">
-      <div class="folder-header" onClick={() => setExpanded(e => !e)}>
-        <div class={`folder-chevron ${expanded ? 'open' : ''}`}>▶</div>
+      <div class="folder-header">
         {(hasWorking || hasUnread) && (
           <span class={`folder-dot ${hasWorking ? 'working' : 'unread'}`} />
         )}
         <div class="folder-name">{folder.name}</div>
         <LaunchButton cwd={folder.path} className="folder-launch-btn" />
       </div>
-      {expanded && (
-        <div class="folder-sessions">
-          {visible.map(s => (
-            <SessionItem
-              key={s.id}
-              session={s}
-              selected={selectedId === s.id}
-              onClick={() => onSelect(s.id)}
-              onClose={() => onCloseSession(s)}
-            />
-          ))}
-          {visible.length === 0 && collapsed.length > 0 && (
+      <div class="folder-sessions">
+        {visible.map(s => (
+          <SessionItem
+            key={s.id}
+            session={s}
+            selected={selectedId === s.id}
+            onClick={() => onSelect(s.id)}
+            onClose={() => onCloseSession(s)}
+          />
+        ))}
+        {visible.length === 0 && collapsed.length > 0 && (
+          <button
+            class="folder-hide-btn"
+            onClick={() => onHideFolder(folder.path)}
+          >
+            Hide folder
+          </button>
+        )}
+        {collapsed.length > 0 && (
+          <>
             <button
-              class="folder-hide-btn"
-              onClick={() => onHideFolder(folder.path)}
+              class="show-more-btn"
+              onClick={() => setShowMore(v => !v)}
             >
-              Hide folder
+              {showMore ? 'Show less' : `Show ${collapsed.length} more`}
             </button>
-          )}
-          {collapsed.length > 0 && (
-            <>
-              <button
-                class="show-more-btn"
-                onClick={() => setShowMore(v => !v)}
-              >
-                {showMore ? 'Show less' : `Show ${collapsed.length} more`}
-              </button>
-              {showMore && collapsed.map(s => (
-                <SessionItem
-                  key={s.id}
-                  session={s}
-                  selected={selectedId === s.id}
-                  onClick={() => onSelect(s.id)}
-                  onClose={() => onCloseSession(s)}
-                />
-              ))}
-            </>
-          )}
-        </div>
-      )}
+            {showMore && collapsed.map(s => (
+              <SessionItem
+                key={s.id}
+                session={s}
+                selected={selectedId === s.id}
+                onClick={() => onSelect(s.id)}
+                onClose={() => onCloseSession(s)}
+              />
+            ))}
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -491,33 +487,33 @@ function Sidebar({
               isSessionVisible={isSessionVisible}
             />
           ))}
-          {hiddenFolders.length > 0 && (
-            <div class="sidebar-add-folder">
-              <button
-                class="add-folder-btn"
-                onClick={() => setShowFolderPicker(v => !v)}
-              >
-                + Add folder
-              </button>
-              {showFolderPicker && (
-                <div class="folder-picker">
-                  {hiddenFolders.map(f => (
-                    <button
-                      key={f.path}
-                      class="folder-picker-item"
-                      onClick={() => {
-                        onShowFolder(f.path)
-                        setShowFolderPicker(false)
-                      }}
-                    >
-                      <span class="folder-picker-name">{f.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </div>
+        {hiddenFolders.length > 0 && (
+          <div class="sidebar-footer">
+            <button
+              class="add-folder-btn"
+              onClick={() => setShowFolderPicker(v => !v)}
+            >
+              + Add folder
+            </button>
+            {showFolderPicker && (
+              <div class="folder-picker">
+                {hiddenFolders.map(f => (
+                  <button
+                    key={f.path}
+                    class="folder-picker-item"
+                    onClick={() => {
+                      onShowFolder(f.path)
+                      setShowFolderPicker(false)
+                    }}
+                  >
+                    <span class="folder-picker-name">{f.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </aside>
     </>
   )

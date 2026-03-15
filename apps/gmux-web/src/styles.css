@@ -143,14 +143,8 @@ body {
   display: flex;
   align-items: center;
   padding: 8px 12px 4px 14px;
-  cursor: pointer;
   user-select: none;
   gap: 6px;
-  transition: background 0.1s;
-}
-
-.folder-header:hover {
-  background: var(--bg-hover);
 }
 
 /* ── Launch button + inline menu ── */
@@ -170,7 +164,7 @@ body {
   transition: opacity 0.1s;
 }
 
-.folder-header:hover .launch-container.folder-launch-btn {
+.folder:hover .launch-container.folder-launch-btn {
   opacity: 1;
 }
 
@@ -276,22 +270,6 @@ body {
 @keyframes launch-item-in {
   from { opacity: 0; transform: translateY(-3px); }
   to { opacity: 1; transform: translateY(0); }
-}
-
-.folder-chevron {
-  width: 12px;
-  height: 12px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  transition: transform 0.15s ease;
-  font-size: 8px;
-}
-
-.folder-chevron.open {
-  transform: rotate(90deg);
 }
 
 .folder-name {
@@ -482,9 +460,11 @@ body {
 .show-more-btn:hover,
 .folder-hide-btn:hover { color: var(--text-secondary); }
 
-/* ── Add folder button + picker ── */
-.sidebar-add-folder {
-  padding: 10px 12px 8px;
+/* ── Sidebar footer ── */
+.sidebar-footer {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
 }
 
 .add-folder-btn {
