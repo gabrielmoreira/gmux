@@ -1,6 +1,6 @@
 /* gmux — session orchestration UI */
 
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=JetBrains+Mono:ital,wght@1,400;1,500&family=Source+Sans+3:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Instrument+Sans:wght@700&family=JetBrains+Mono:ital,wght@1,400;1,500&family=Source+Sans+3:wght@400;500;600;700&display=swap');
 
 :root {
   /* Surfaces — widened gaps for clearer distinction */
@@ -86,12 +86,11 @@ body {
 }
 
 .sidebar-logo {
-  font-family: 'Source Sans 3', sans-serif;
-  font-size: 13px;
+  font-family: 'Instrument Sans', sans-serif;
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
+  letter-spacing: -0.04em;
+  color: var(--text);
   line-height: 1;
 }
 
@@ -99,16 +98,16 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 16px;
-  padding: 0 5px;
+  min-height: 18px;
+  padding: 0 6px;
   border-radius: 999px;
   background: oklch(22% 0.015 250);
   color: var(--text-muted);
-  font-size: 9px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 500;
   line-height: 1;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  transform: translateY(0.5px);
 }
 
 .sidebar-scroll {
