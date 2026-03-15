@@ -953,23 +953,17 @@ function MobileTerminalBar({
   onSend: (data: string) => void
   onToggleCtrl: () => void
 }) {
-  const actions = [
-    { label: 'esc', sequence: '\x1b', title: 'Escape' },
-    { label: 'tab', sequence: '\t', title: 'Tab' },
-    { label: '↑', sequence: '\x1b[A', title: 'Up arrow' },
-    { label: '↓', sequence: '\x1b[B', title: 'Down arrow' },
-    { label: '↵', sequence: '\n', title: 'New line' },
-  ]
-
   return (
     <div class="mobile-bottom-bar" aria-label="Mobile terminal controls">
-      <button class="mobile-bottom-action mobile-bottom-menu" onClick={onMenu} title="Open sessions">
-        <span class="mobile-bottom-icon">☰</span>
-        <span>menu</span>
+      <button class="mobile-bottom-action" onClick={onMenu} title="Open sessions">
+        ☰
       </button>
+      <div class="mobile-bottom-sep" />
       <div class="mobile-terminal-actions" role="toolbar" aria-label="Terminal keys">
+        <button class="mobile-bottom-action" disabled={!canSend} onClick={() => onSend('\x1b')} title="Escape">esc</button>
+        <button class="mobile-bottom-action" disabled={!canSend} onClick={() => onSend('\t')} title="Tab">tab</button>
         <button
-          class={`mobile-bottom-action mobile-bottom-modifier ${ctrlArmed ? 'armed' : ''}`}
+          class={`mobile-bottom-action ${ctrlArmed ? 'armed' : ''}`}
           disabled={!canSend}
           onClick={onToggleCtrl}
           title={ctrlArmed ? 'Ctrl armed for next typed key' : 'Arm Ctrl for next typed key'}
@@ -977,17 +971,9 @@ function MobileTerminalBar({
         >
           ctrl
         </button>
-        {actions.map((action) => (
-          <button
-            key={action.label}
-            class={`mobile-bottom-action ${action.label === '↵' ? 'mobile-bottom-enter' : ''}`}
-            disabled={!canSend}
-            onClick={() => onSend(action.sequence)}
-            title={action.title}
-          >
-            {action.label}
-          </button>
-        ))}
+        <button class="mobile-bottom-action" disabled={!canSend} onClick={() => onSend('\x1b[A')} title="Up arrow">↑</button>
+        <button class="mobile-bottom-action" disabled={!canSend} onClick={() => onSend('\x1b[B')} title="Down arrow">↓</button>
+        <button class="mobile-bottom-action" disabled={!canSend} onClick={() => onSend('\n')} title="Enter">↵</button>
       </div>
     </div>
   )

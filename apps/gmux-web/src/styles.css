@@ -871,18 +871,24 @@ body {
   .mobile-bottom-bar {
     display: flex;
     align-items: center;
-    gap: 8px;
-    min-height: 56px;
-    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    gap: 6px;
+    min-height: 52px;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
     border-top: 1px solid var(--border);
-    background:
-      linear-gradient(to top, color-mix(in oklch, var(--bg-sidebar) 88%, black), var(--bg-sidebar));
+    background: var(--bg-sidebar);
+    flex-shrink: 0;
+  }
+
+  .mobile-bottom-sep {
+    width: 1px;
+    height: 24px;
+    background: var(--border);
     flex-shrink: 0;
   }
 
   .mobile-terminal-actions {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     overflow-x: auto;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
@@ -897,48 +903,35 @@ body {
   .mobile-bottom-action {
     appearance: none;
     border: 1px solid var(--border-strong);
-    background: color-mix(in oklch, var(--bg-surface) 84%, black);
-    color: var(--text);
-    border-radius: 999px;
-    min-height: 40px;
-    padding: 0 12px;
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    border-radius: 6px;
+    min-height: 36px;
+    min-width: 36px;
+    padding: 0 10px;
     flex: 0 0 auto;
     font-family: 'Source Sans 3', sans-serif;
     font-size: 13px;
-    font-weight: 600;
-    letter-spacing: 0.01em;
+    font-weight: 500;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
     touch-action: manipulation;
+    transition: background 0.1s, border-color 0.1s, color 0.1s;
+  }
+
+  .mobile-bottom-action:active {
+    background: var(--bg-hover);
   }
 
   .mobile-bottom-action:disabled {
-    opacity: 0.45;
+    opacity: 0.35;
   }
 
-  .mobile-bottom-menu {
-    background: color-mix(in oklch, var(--accent) 18%, var(--bg-surface));
-    border-color: color-mix(in oklch, var(--accent) 28%, var(--border-strong));
+  .mobile-bottom-action.armed {
+    background: color-mix(in oklch, var(--accent) 20%, var(--bg-surface));
+    border-color: var(--accent);
     color: var(--text);
-  }
-
-  .mobile-bottom-modifier.armed {
-    background: color-mix(in oklch, var(--accent) 26%, var(--bg-surface));
-    border-color: color-mix(in oklch, var(--accent) 45%, var(--border-strong));
-    color: oklch(94% 0.01 250);
-    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 30%, transparent);
-  }
-
-  .mobile-bottom-enter {
-    font-size: 16px;
-    padding-inline: 14px;
-  }
-
-  .mobile-bottom-icon {
-    font-size: 15px;
-    line-height: 1;
   }
 
   .session-item {
