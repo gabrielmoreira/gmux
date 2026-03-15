@@ -292,15 +292,7 @@ function formatAge(iso: string): string {
   return `${days}d`
 }
 
-/** Check if any session in a folder is actively working. */
-function folderHasWorkingSessions(folder: Folder): boolean {
-  return folder.sessions.some(s => s.alive && s.status?.working)
-}
 
-/** Check if any session in a folder is unread. */
-function folderHasUnreadSessions(folder: Folder): boolean {
-  return folder.sessions.some(s => s.unread)
-}
 
 // ── Components ──
 
@@ -376,8 +368,6 @@ function FolderGroup({
   isSessionVisible: (session: Session) => boolean
 }) {
   const [showMore, setShowMore] = useState(false)
-  const hasWorking = folderHasWorkingSessions(folder)
-  const hasUnread = folderHasUnreadSessions(folder)
 
   // Split sessions into visible and collapsed ("show more")
   const visible: Session[] = []
@@ -390,9 +380,6 @@ function FolderGroup({
   return (
     <div class="folder">
       <div class="folder-header">
-        {(hasWorking || hasUnread) && (
-          <span class={`folder-dot ${hasWorking ? 'working' : 'unread'}`} />
-        )}
         <div class="folder-name">{folder.name}</div>
         <LaunchButton cwd={folder.path} className="folder-launch-btn" />
       </div>
