@@ -3,7 +3,7 @@
 # Run before starting dev to avoid EADDRINUSE / stale processes.
 set -euo pipefail
 
-ports=(8790 5173 8787)
+ports=(8790 5173)
 
 # Kill gmuxd by name (catches instances not yet listening on a port)
 if pids=$(pgrep -x gmuxd 2>/dev/null); then

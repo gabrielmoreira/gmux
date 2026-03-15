@@ -28,8 +28,7 @@ Run all services with watch/HMR:
 
 This starts:
 - **gmuxd** (`:8790`) — Go, auto-restarts on `.go` changes via watchexec
-- **gmux-api** (`:8787`) — TypeScript, auto-restarts via `tsx watch`
-- **gmux-web** (`:5173`) — Vite HMR, instant reload
+- **gmux-web** (`:5173`) — Vite HMR, proxies `/v1/*` and `/ws/*` to gmuxd
 - **gmuxr** — Go runner launching `pi`, auto-restarts via watchexec
 
 Ctrl+C stops everything.
@@ -39,7 +38,6 @@ To run services individually:
 ```bash
 pnpm moon run gmuxd:dev        # just gmuxd with watchexec
 pnpm moon run gmux-web:dev     # just vite
-pnpm moon run gmux-api:dev     # just the api
 ```
 
 ## Tests & linting

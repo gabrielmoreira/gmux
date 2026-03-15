@@ -171,25 +171,20 @@ graph TB
     end
 
     subgraph "Web"
-        api["apps/gmux-api\nTypeScript — tRPC, SSE proxy"]
         web["apps/gmux-web\nPreact — sidebar, terminal"]
         proto["packages/protocol\nTypeScript — zod schemas"]
-        proto --> api
         proto --> web
-        api --> web
     end
 
     gmuxr1 -- "Unix socket" --> gmuxd1
-    gmuxd1 -- "REST + SSE" --> api
-    gmuxd1 -- "WS proxy" --> web
+    gmuxd1 -- "REST + SSE + WS" --> web
 ```
 
 | Path | Language | Purpose |
 |------|----------|---------|
 | `cli/gmuxr` | Go | Session launcher — PTY, WebSocket, adapters |
-| `services/gmuxd` | Go | Machine daemon — discovery, cache, proxy, probes |
+| `services/gmuxd` | Go | Machine daemon — discovery, cache, WS proxy, embedded web UI |
 | `apps/gmux-web` | TypeScript/Preact | Browser UI — sidebar, terminal, header bar |
-| `apps/gmux-api` | TypeScript/Hono | API gateway — tRPC router, SSE passthrough |
 | `packages/protocol` | TypeScript | Shared schemas, zod-validated |
 | `docs/` | Markdown | ADRs, protocol specs, plans |
 
