@@ -638,7 +638,8 @@ function TerminalView({
     const term = new Terminal({
       theme: TERM_THEME,
       fontFamily: "'Fira Code', monospace",
-      fontSize: 14,
+      fontSize: 13,
+      lineHeight: 0.8,
       cursorBlink: true,
     })
     const fitAddon = new FitAddon()

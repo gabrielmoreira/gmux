@@ -699,6 +699,9 @@ body {
   min-height: 100%;
   padding: 0 6px 6px 6px;
   margin: 0 auto; /* center the character grid horizontally */
+  font-variant-ligatures: common-ligatures;
+  font-feature-settings: "liga" 1, "calt" 1;
+  -webkit-font-feature-settings: "liga" 1, "calt" 1;
 }
 
 /* Hide xterm's native scrollbar — scrollback is handled by the PTY replay buffer */
