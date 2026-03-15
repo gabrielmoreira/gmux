@@ -85,17 +85,26 @@ func (p *Pi) Monitor(output []byte) *adapter.Status {
 
 // --- SessionFiler ---
 
-// SessionDir returns pi's session directory for a given cwd.
-// Pi encodes: strip leading /, replace remaining / with -, wrap in --.
-// /home/mg/dev/gmux → --home-mg-dev-gmux--
-func (p *Pi) SessionDir(cwd string) string {
+// SessionRootDir returns pi's top-level sessions directory.
+func (p *Pi) SessionRootDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
+	return filepath.Join(home, ".pi", "agent", "sessions")
+}
+
+// SessionDir returns pi's session directory for a given cwd.
+// Pi encodes: strip leading /, replace remaining / with -, wrap in --.
+// /home/mg/dev/gmux → --home-mg-dev-gmux--
+func (p *Pi) SessionDir(cwd string) string {
+	root := p.SessionRootDir()
+	if root == "" {
+		return ""
+	}
 	path := strings.TrimPrefix(cwd, "/")
 	encoded := "--" + strings.ReplaceAll(path, "/", "-") + "--"
-	return filepath.Join(home, ".pi", "agent", "sessions", encoded)
+	return filepath.Join(root, encoded)
 }
 
 // ParseSessionFile reads a pi JSONL session file and returns display metadata.

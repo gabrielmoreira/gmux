@@ -1,59 +1,83 @@
 ---
 title: Architecture
-description: How gmuxr, gmuxd, and gmux-web connect.
+description: "Broad system structure: runner, daemon, and web client."
 ---
 
-gmux has three components. Two are Go binaries, one is a browser app.
+This page is the high-level architecture view. It explains the major runtime pieces and how they relate.
 
-## Components
+For adapter-specific internals — including session-file discovery, attribution, resumable sessions, and child callbacks — see [Adapter Architecture](/develop/adapter-architecture).
 
-### gmuxr — session runner
+## Core runtime pieces
 
-`gmuxr` wraps any command in a managed session. For each session it:
+### `gmuxr` — session runner
 
-1. Allocates a PTY (pseudo-terminal)
-2. Starts a WebSocket server on a Unix socket
-3. Runs an **adapter** that monitors the child process
-4. Exposes a status API on `$GMUX_SOCKET`
+`gmuxr` runs once per session. It:
 
-gmuxr is the **source of truth** for session state. If gmuxd restarts, it rediscovers running gmuxr instances and rebuilds its cache.
+- launches the child under a PTY
+- owns the live session state
+- exposes the session on a Unix socket
+- accepts terminal attachment and child callbacks
+- runs adapter logic over the child output
 
-### gmuxd — machine daemon
+`gmuxr` is the source of truth for a live session.
+
+### `gmuxd` — machine daemon
 
 `gmuxd` runs once per machine. It:
 
-1. Discovers gmuxr sessions via their Unix sockets
-2. Caches session state for fast sidebar rendering
-3. Proxies WebSocket connections from the browser to gmuxr
-4. Pushes real-time state updates to the browser via SSE
-5. Runs **probes** that observe working directories
+- discovers live runner sockets
+- reads and caches session metadata
+- subscribes to live updates
+- exposes machine-level APIs for sessions, launchers, attach, kill, and resume
+- proxies terminal websocket connections to the right runner
 
-gmuxd is stateless — restart it anytime and it rebuilds from what's running.
+`gmuxd` is rebuildable. If it restarts, it can rediscover running sessions.
 
-### gmux-web — browser UI
+### Web client
 
-The browser UI provides:
+The repo currently contains separate web pieces for the UI and API layer:
 
-- A **sidebar** that groups sessions by working directory
-- A **terminal** powered by xterm.js (same as VS Code)
-- A **header bar** with session metadata and actions
-- **Real-time updates** via Server-Sent Events
+- `apps/gmux-web` — browser frontend
+- `apps/gmux-api` — API layer used by the frontend during development
+
+The exact production serving/deployment story is still in flux, so this page stays focused on the runtime responsibilities rather than packaging.
 
 ## Data flow
 
-```
-gmuxr ──Unix socket──→ gmuxd ──HTTP/SSE──→ browser
-                              ──WS proxy──→ browser
+At a high level:
+
+```text
+gmuxr ──Unix socket──→ gmuxd ──HTTP/SSE/WS──→ browser client
 ```
 
-1. gmuxr registers with gmuxd over a Unix socket
-2. gmuxd pushes state changes to the browser via SSE
-3. When you click a session, the browser opens a WebSocket through gmuxd to gmuxr
-4. Terminal I/O flows over WebSocket; status updates flow over SSE
+Typical flow:
+
+1. `gmuxr` launches a session and exposes it on a socket
+2. `gmuxd` discovers the socket and reads session metadata
+3. `gmuxd` subscribes to updates from the runner
+4. the browser reads machine-level state from the daemon-facing API
+5. terminal attachment is proxied back to the owning runner
 
 ## Design principles
 
-- **Runner-authoritative**: gmuxr owns session state. gmuxd is a rebuildable cache.
-- **No external dependencies**: No tmux, no screen, no abduco. Just the two binaries.
-- **Web-first**: Works on any device with a browser. No Electron.
-- **Zero config**: No project files, no registration. Sessions group automatically.
+- **runner-authoritative** — live session truth lives in `gmuxr`
+- **rebuildable daemon** — `gmuxd` can recover by rediscovering runners
+- **browser-first supervision** — the UI is reachable without a desktop-specific shell app
+- **adapter extensibility** — tool-specific behavior is layered on top of generic process supervision
+
+## What this page intentionally does not cover
+
+This page does not try to explain:
+
+- adapter capability interfaces
+- session-file scanning and attribution
+- child self-report protocol details
+- resume mechanics for specific integrations
+
+Those details live in [Adapter Architecture](/develop/adapter-architecture).
+
+## TODO
+
+- Add one concrete end-to-end example: launch command → appears in sidebar → attach terminal → resume later.
+- Add a small diagram that reflects the current repo layout (`gmuxr`, `gmuxd`, `gmux-api`, `gmux-web`) instead of the older simplified 3-box view.
+- Document the intended production deployment shape once that stabilizes.

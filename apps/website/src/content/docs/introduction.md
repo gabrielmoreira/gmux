@@ -3,51 +3,65 @@ title: Introduction
 description: What gmux is and why it exists.
 ---
 
-gmux is a session manager for AI agents, test runners, and long-running processes. It gives you a live, interactive terminal for each one — grouped by project, with real-time status pushed to your browser.
+gmux is a browser-based session manager for AI agents, test runners, and long-running processes. It gives you a live terminal for each one, grouped by working directory, with status updates that help you notice what needs attention.
 
-## The problem
+## Why it exists
 
-You're running three AI agents, a test watcher, and a build process across two projects. They're scattered across tmux panes, terminal tabs, and background jobs. When an agent needs input, you don't notice for ten minutes. When tests fail, you find out when you context-switch back.
+Long-running command-line work is easy to start and annoying to supervise. AI agents, watchers, builds, and shells end up scattered across tabs and panes. gmux puts them in one place and makes them visible from a browser.
 
-## The solution
+## What gmux does today
 
-gmux wraps each command in a **managed session** with:
+- launches commands as managed sessions through `gmuxr`
+- keeps per-session state in the runner
+- aggregates live sessions in `gmuxd`
+- exposes a browser UI for browsing sessions and attaching to terminals
+- uses adapters to add tool-specific status and metadata
+- supports resumable sessions for tools that have file-backed adapters, such as `pi`
 
-- A full terminal (xterm.js — the same engine as VS Code)
-- Real-time status that tells you what the process is doing
-- Automatic grouping by project directory
-- A browser UI that works on desktop and phone
-
-No Electron, no desktop app, no tmux. Just two small Go binaries and a browser tab.
-
-## Key concepts
+## Core concepts
 
 ### Sessions
 
-A session is any command launched through `gmuxr`. It gets a PTY, a WebSocket for terminal access, and an adapter that monitors what the child process is doing.
+A session is any command launched through `gmuxr`.
 
 ```bash
-gmuxr pi                    # launch a coding agent
-gmuxr -- pytest --watch     # launch a test watcher
-gmuxr -- make build         # any command works
+gmuxr pi
+gmuxr -- make build
+gmuxr -- pytest --watch
 ```
+
+Each session gets a PTY, runner-owned state, and a terminal attachment path.
 
 ### Adapters
 
-Adapters are session-level intelligence. They teach gmux how to interpret specific tools — when pi is thinking vs waiting for input, when pytest has failures, when a build is done. Unknown commands get generic activity tracking.
+Adapters teach gmux how to interpret specific tools. The built-in adapters currently matter most for:
 
-### Probes
+- **shell** — terminal title tracking
+- **pi** — live status, file-backed titles, and resume
 
-Probes are directory-level intelligence. They observe working directories and report context like git branch, dirty state, and open PRs. They enrich the sidebar's folder headings.
+See [Adapters](/adapters) for the high-level overview.
 
-### Architecture
+### Runtime split
 
+At a high level:
+
+```text
+gmuxr (per session) → gmuxd (per machine) → browser client
 ```
-gmuxr (per session) → gmuxd (per machine) → browser
-```
 
-**gmuxr** manages individual sessions. **gmuxd** discovers and aggregates them. The **browser** displays everything.
+- `gmuxr` owns the child process and its live state
+- `gmuxd` discovers sessions and serves aggregated machine-level state
+- the browser UI renders the session list and terminal view
+
+See [Architecture](/architecture) for the broad system view and [Adapter Architecture](/develop/adapter-architecture) for adapter-specific runtime details.
+
+## TODO
+
+- Document the user-facing browser/UI flow more concretely, with screenshots or a short walkthrough.
+- Add a short page on session lifecycle and resume semantics from a user's point of view.
 
 ## Next steps
 
-→ [Quick Start](/quick-start) — install and run gmux in 30 seconds
+- [Quick Start](/quick-start)
+- [Architecture](/architecture)
+- [Adapters](/adapters)

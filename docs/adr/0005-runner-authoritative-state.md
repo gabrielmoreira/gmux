@@ -39,7 +39,7 @@ type Adapter interface {
     // Env returns adapter-specific environment variables for the child.
     // The runner automatically sets GMUX, GMUX_SOCKET, GMUX_SESSION_ID,
     // GMUX_ADAPTER, GMUX_VERSION. Return nil if no extra env needed.
-    // NOTE: adapters never modify the command — see docs/adapters.md.
+    // NOTE: adapters never modify the command — see website docs: Writing an Adapter.
     Env(ctx EnvContext) []string
 
     // Monitor receives PTY output and produces Status events.

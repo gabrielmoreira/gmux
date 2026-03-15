@@ -32,6 +32,19 @@ export default defineConfig({
             { label: 'Probes', slug: 'probes' },
           ],
         },
+        {
+          label: 'Integrations',
+          items: [
+            { label: 'pi', slug: 'integrations/pi' },
+          ],
+        },
+        {
+          label: 'Develop',
+          items: [
+            { label: 'Adapter Architecture', slug: 'develop/adapter-architecture' },
+            { label: 'Writing an Adapter', slug: 'develop/writing-adapters' },
+          ],
+        },
       ],
       // Disable default homepage — we use a custom one
       components: {},

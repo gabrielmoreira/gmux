@@ -16,6 +16,7 @@ import (
 	"github.com/gmuxapp/gmux/packages/adapter"
 	"github.com/gmuxapp/gmux/packages/adapter/adapters"
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/discovery"
+	"github.com/gmuxapp/gmux/services/gmuxd/internal/sessionfiles"
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/store"
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/wsproxy"
 )
@@ -59,6 +60,26 @@ func launcherNames(ls []adapter.Launcher) []string {
 	return names
 }
 
+// launchGmuxr starts a detached gmuxr process with the given command and cwd.
+// Returns the PID on success.
+func launchGmuxr(gmuxrBin string, command []string, cwd string) (int, error) {
+	args := []string{"--cwd", cwd, "--"}
+	args = append(args, command...)
+
+	cmd := exec.Command(gmuxrBin, args...)
+	cmd.Dir = cwd
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	cmd.Stdin = nil
+
+	if err := cmd.Start(); err != nil {
+		return 0, err
+	}
+	go cmd.Wait()
+	return cmd.Process.Pid, nil
+}
+
 func main() {
 	gmuxrBin := resolveGmuxr() // resolve once, use everywhere
 	if gmuxrBin != "" {
@@ -68,12 +89,21 @@ func main() {
 
 	sessions := store.New()
 	subs := discovery.NewSubscriptions(sessions)
+	pendingResumes := discovery.NewPendingResumes()
 
 	// Start socket-based discovery (scans /tmp/gmux-sessions/*.sock)
 	// Discovery also subscribes to each runner's /events SSE for live updates.
 	stopDiscovery := make(chan struct{})
 	go discovery.Watch(sessions, subs, 3*time.Second, stopDiscovery)
 	defer close(stopDiscovery)
+
+	// Start session file scanner — discovers resumable sessions from
+	// adapter session files (e.g. pi's JSONL conversations). Also purges
+	// stale dead sessions that were never attributed to a file.
+	scanner := sessionfiles.New(sessions)
+	stopScanner := make(chan struct{})
+	go scanner.Run(30*time.Second, stopScanner)
+	defer close(stopScanner)
 
 	mux := http.NewServeMux()
 
@@ -140,7 +170,7 @@ func main() {
 		}
 
 		log.Printf("register: %s at %s", req.SessionID, req.SocketPath)
-		if err := discovery.Register(sessions, subs, req.SocketPath); err != nil {
+		if err := discovery.Register(sessions, subs, req.SocketPath, pendingResumes); err != nil {
 			log.Printf("register: failed to query meta for %s: %v", req.SessionID, err)
 			writeError(w, http.StatusBadGateway, "runner_unreachable", err.Error())
 			return
@@ -220,32 +250,17 @@ func main() {
 			return
 		}
 
-		// Build args: gmuxr [--cwd dir] -- <command...>
-		args := []string{}
-		args = append(args, "--cwd", cwd)
-		args = append(args, "--")
-		args = append(args, req.Command...)
-
-		cmd := exec.Command(gmuxrBin, args...)
-		cmd.Dir = cwd
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // detach from gmuxd
-		cmd.Stdout = nil
-		cmd.Stderr = nil
-		cmd.Stdin = nil
-
-		if err := cmd.Start(); err != nil {
+		pid, err := launchGmuxr(gmuxrBin, req.Command, cwd)
+		if err != nil {
 			log.Printf("launch: failed to start gmuxr: %v", err)
 			writeError(w, http.StatusInternalServerError, "launch_failed", err.Error())
 			return
 		}
 
-		// Don't wait — gmuxr is a detached daemon. Release the process.
-		go cmd.Wait()
-
-		log.Printf("launch: started gmuxr pid=%d cwd=%s cmd=%v", cmd.Process.Pid, cwd, req.Command)
+		log.Printf("launch: started gmuxr pid=%d cwd=%s cmd=%v", pid, cwd, req.Command)
 		writeJSON(w, map[string]any{
 			"ok":   true,
-			"data": map[string]any{"pid": cmd.Process.Pid},
+			"data": map[string]any{"pid": pid},
 		})
 	})
 
@@ -281,6 +296,49 @@ func main() {
 					"ws_path":     "/ws/" + sessionID,
 					"socket_path": sess.SocketPath,
 				},
+			})
+
+		case "resume":
+			if r.Method != http.MethodPost {
+				writeError(w, http.StatusMethodNotAllowed, "bad_request", "method not allowed")
+				return
+			}
+			sess, ok := sessions.Get(sessionID)
+			if !ok {
+				writeError(w, http.StatusNotFound, "not_found", "session not found")
+				return
+			}
+			if !sess.Resumable || len(sess.Command) == 0 {
+				writeError(w, http.StatusBadRequest, "not_resumable", "session is not resumable")
+				return
+			}
+			if gmuxrBin == "" {
+				writeError(w, http.StatusInternalServerError, "gmuxr_not_found", "gmuxr not found")
+				return
+			}
+
+			// Record pending resume BEFORE launching so Register() can match.
+			pendingResumes.Add(sess.Cwd, sess.Kind, sessionID)
+
+			pid, err := launchGmuxr(gmuxrBin, sess.Command, sess.Cwd)
+			if err != nil {
+				log.Printf("resume: failed to start gmuxr: %v", err)
+				writeError(w, http.StatusInternalServerError, "launch_failed", err.Error())
+				return
+			}
+
+			// Update in-place: session is now starting.
+			// Register() will merge in the live session data (socket, pid)
+			// when gmuxr calls POST /v1/register.
+			sess.Alive = true
+			sess.Resumable = false
+			sess.Status = &store.Status{Label: "starting", State: "active"}
+			sessions.Upsert(sess)
+
+			log.Printf("resume: started gmuxr pid=%d for %s cwd=%s", pid, sessionID, sess.Cwd)
+			writeJSON(w, map[string]any{
+				"ok":   true,
+				"data": map[string]any{"pid": pid, "session_id": sessionID},
 			})
 
 		case "kill":

@@ -54,6 +54,16 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => {
         return ctx.gmuxd.launchSession(input)
       }),
+
+    resume: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        return ctx.gmuxd.resumeSession(input.sessionId)
+      }),
   }),
 })
 

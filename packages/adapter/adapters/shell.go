@@ -1,5 +1,6 @@
 // Package adapters contains all built-in adapter implementations.
-// Each adapter gets its own file. To add an adapter, see docs/adapters.md.
+// Each adapter gets its own file. For contributor docs, see the website
+// page "Writing an Adapter".
 package adapters
 
 import "github.com/gmuxapp/gmux/packages/adapter"

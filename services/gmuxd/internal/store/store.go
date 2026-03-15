@@ -21,6 +21,8 @@ type Session struct {
 	Subtitle   string  `json:"subtitle,omitempty"`
 	Status     *Status `json:"status"`
 	Unread     bool    `json:"unread"`
+	Resumable  bool    `json:"resumable,omitempty"`
+	ResumeKey  string  `json:"resume_key,omitempty"`
 	SocketPath string  `json:"socket_path,omitempty"`
 }
 

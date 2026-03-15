@@ -2,9 +2,7 @@ language: javascript
 
 tasks:
   dev:
-    script: |
-      ../../scripts/free-port.sh 5173
-      exec pnpm exec vite
+    command: pnpm exec vite
     deps:
       - protocol:build
     preset: server

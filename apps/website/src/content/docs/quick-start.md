@@ -1,49 +1,64 @@
 ---
 title: Quick Start
-description: Install gmux and launch your first session in 30 seconds.
+description: Current local-development path for running gmux.
 ---
 
-## Install
+> TODO: replace this page with end-user install and run instructions once packaging and distribution are settled.
+
+This page documents the workflow that is accurate in the repository today: starting gmux from a local checkout.
+
+## From a local checkout
+
+Install dependencies:
 
 ```bash
-go install github.com/gmuxapp/gmux/services/gmuxd@latest
-go install github.com/gmuxapp/gmux/cli/gmuxr@latest
+pnpm install
 ```
 
-## Start the daemon
+Start the development stack:
 
 ```bash
-gmuxd &
+pnpm dev
 ```
 
-gmuxd runs once per machine. It discovers sessions, caches their state, and serves the browser UI.
+This starts the relevant services in watch mode, including the browser UI and backend components used during development.
 
-## Launch sessions
-
-```bash
-gmuxr pi                        # launch a coding agent
-gmuxr -- pytest tests/ --watch  # launch a test watcher
-gmuxr -- make build             # or any command
-```
-
-Each `gmuxr` call wraps a command in a managed session with a PTY, WebSocket, and status adapter.
-
-## Open the UI
+Open the UI:
 
 ```bash
 open http://localhost:5173
 ```
 
-All three sessions appear in the sidebar, grouped by working directory, with live status indicators. Click one to attach a full terminal.
+## What to expect
 
-## What you'll see
+In local development, the main dev services are:
 
-Sessions from the same directory are grouped into **folders**. Each folder shows git branch and dirty state (via probes). Each session shows what the process is doing (via adapters).
+- `gmux-web` on `http://localhost:5173`
+- `gmux-api` on `http://localhost:8787`
+- `gmuxd` on `http://localhost:8790`
 
-The terminal is xterm.js with 128KB of scrollback that replays instantly on reconnect. Switch away and come back — nothing is lost.
+The root dev script also starts the supporting watchers needed for a working development environment.
+
+## Launching sessions
+
+Once the stack is running, sessions launched through `gmuxr` should appear in the UI.
+
+Examples:
+
+```bash
+gmuxr pi
+gmuxr -- make build
+gmuxr -- pytest --watch
+```
+
+## TODO
+
+- Document the production / installed workflow separately from local development.
+- Explain how the browser UI is expected to be served outside the monorepo dev setup.
+- Add a short verification checklist for first run: which ports should respond, what a healthy sidebar looks like, and how to attach to a session.
 
 ## Next steps
 
-- [Architecture](/architecture) — understand gmuxr, gmuxd, and how they connect
-- [Adapters](/adapters) — how gmux understands what your process is doing
-- [Probes](/probes) — how gmux enriches folder headings with project context
+- [Introduction](/introduction)
+- [Architecture](/architecture)
+- [Adapters](/adapters)

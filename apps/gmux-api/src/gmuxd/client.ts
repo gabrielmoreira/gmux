@@ -82,5 +82,17 @@ export function createGmuxdClient(baseUrl: string) {
       const json = await response.json()
       return json
     },
+
+    async resumeSession(sessionId: string) {
+      const response = await fetch(`${normalizedBaseUrl}/v1/sessions/${sessionId}/resume`, {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        throw new Error(`gmuxd resume failed: ${response.status} ${response.statusText}`)
+      }
+
+      return response.json()
+    },
   }
 }

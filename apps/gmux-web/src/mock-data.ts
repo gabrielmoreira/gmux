@@ -27,6 +27,8 @@ export interface Session {
   subtitle: string
   status: SessionStatus | null
   unread: boolean
+  resumable?: boolean
+  resume_key?: string
   socket_path: string
 }
 
@@ -222,8 +224,6 @@ export function groupByFolder(sessions: Session[]): Folder[] {
       name: parts[parts.length - 1],
       path,
       sessions: sessions.sort((a, b) => {
-        // Alive first, then by created_at desc
-        if (a.alive !== b.alive) return a.alive ? -1 : 1
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       }),
     })

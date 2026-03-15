@@ -30,6 +30,11 @@ type Launchable interface {
 // files to disk (pi, claude-code, etc). Used by gmuxd for resumable
 // session discovery and session file attribution.
 type SessionFiler interface {
+	// SessionRootDir returns the parent directory containing all per-cwd
+	// session subdirectories (e.g. ~/.pi/agent/sessions/).
+	// Used by the scanner to enumerate all known working directories.
+	SessionRootDir() string
+
 	// SessionDir returns the directory where this tool stores session
 	// files for the given cwd. Returns "" if not applicable.
 	SessionDir(cwd string) string

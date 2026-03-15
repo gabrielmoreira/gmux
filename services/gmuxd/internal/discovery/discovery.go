@@ -59,6 +59,14 @@ func Scan(sessions *store.Store, subs *Subscriptions) {
 		return
 	}
 
+	// Build set of sockets already tracked (from merged resumes).
+	trackedSockets := make(map[string]bool)
+	for _, s := range sessions.List() {
+		if s.SocketPath != "" {
+			trackedSockets[s.SocketPath] = true
+		}
+	}
+
 	seen := make(map[string]bool)
 
 	for _, entry := range entries {
@@ -69,10 +77,15 @@ func Scan(sessions *store.Store, subs *Subscriptions) {
 		sockPath := filepath.Join(dir, entry.Name())
 		sessionID := strings.TrimSuffix(entry.Name(), ".sock")
 
+		// Skip if this socket is already tracked by an existing session
+		// (e.g., a merged resume that kept a different session ID).
+		if trackedSockets[sockPath] {
+			seen[sessionID] = true
+			continue
+		}
+
 		sess, err := queryMeta(sockPath)
 		if err != nil {
-			// Socket unreachable — stale, clean up
-			// Socket unreachable — mark dead if we know about it, clean up socket file
 			log.Printf("discovery: %s unreachable: %v", sessionID, err)
 			os.Remove(sockPath)
 			if sess, ok := sessions.Get(sessionID); ok && sess.Alive {
@@ -87,7 +100,6 @@ func Scan(sessions *store.Store, subs *Subscriptions) {
 
 		seen[sess.ID] = true
 		sessions.Upsert(*sess)
-		// Subscribe to runner /events for real-time updates
 		if subs != nil {
 			subs.Subscribe(sess.ID, sockPath)
 		}
@@ -110,14 +122,39 @@ func Scan(sessions *store.Store, subs *Subscriptions) {
 
 // Register handles a registration request from gmux-run.
 // Immediately queries the runner's /meta, adds to store, and subscribes to /events.
-func Register(sessions *store.Store, subs *Subscriptions, socketPath string) error {
-	sess, err := queryMeta(socketPath)
+// If there's a pending resume matching this session's cwd+kind, the existing
+// store entry is updated in-place rather than creating a new one.
+func Register(sessions *store.Store, subs *Subscriptions, socketPath string, resumes *PendingResumes) error {
+	newSess, err := queryMeta(socketPath)
 	if err != nil {
 		return err
 	}
-	sessions.Upsert(*sess)
+
+	// Check if this is a resumed session.
+	if resumes != nil {
+		if existingID, ok := resumes.Take(newSess.Cwd, newSess.Kind); ok {
+			if existing, ok := sessions.Get(existingID); ok {
+				// Merge: keep the existing entry's ID and resume_key,
+				// update with live session data.
+				existing.Alive = true
+				existing.Resumable = false
+				existing.SocketPath = socketPath
+				existing.Pid = newSess.Pid
+				existing.StartedAt = newSess.StartedAt
+				existing.Status = newSess.Status
+				sessions.Upsert(existing)
+				if subs != nil {
+					subs.Subscribe(existingID, socketPath)
+				}
+				log.Printf("register: merged resumed session %s ← %s", existingID, newSess.ID)
+				return nil
+			}
+		}
+	}
+
+	sessions.Upsert(*newSess)
 	if subs != nil {
-		subs.Subscribe(sess.ID, socketPath)
+		subs.Subscribe(newSess.ID, socketPath)
 	}
 	return nil
 }

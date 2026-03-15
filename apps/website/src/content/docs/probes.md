@@ -1,49 +1,28 @@
 ---
 title: Probes
-description: How gmux enriches folder headings with project context.
+description: Planned folder-level metadata and project context.
 ---
 
-Probes are directory-level intelligence. They observe working directories and report context that enriches the sidebar's folder headings.
+> TODO: this page needs to be rewritten once probes are implemented or stabilized.
 
-## What probes provide
+The older probe documentation on this site was too specific and no longer matched the current codebase closely enough to trust.
 
-When sessions share a working directory, they're grouped into a **folder**. Probes add metadata to the folder heading:
+## What this page will eventually cover
 
-```
-▼ myapp                        ● 2
-  main · 3 changed · PR #42
-```
+When probe support is ready, this page should explain:
 
-Here, the **git probe** reports `main · 3 changed` and the **GitHub PR probe** reports `PR #42`.
+- what probes are supposed to add to folder- or project-level UI
+- which built-in probes exist
+- whether probes run in `gmuxd`, the API layer, or somewhere else
+- what the script or plugin contract looks like
+- how probe results affect sorting, grouping, and folder metadata
 
-## Built-in probes
+## Current status
 
-| Probe | Reports |
-|-------|---------|
-| **git** | Branch name, dirty file count |
-| **github-pr** | Open PR number, status |
+Treat probes as an area of active design or unfinished documentation, not as a finished documented feature.
 
-## Script probes
+## TODO
 
-Drop a bash script in `~/.config/gmux/probes/` and it becomes a probe. gmuxd runs it against each matching directory and expects JSON output.
-
-### Example: Node.js version probe
-
-```bash
-#!/bin/bash
-# ~/.config/gmux/probes/node-version.sh
-
-if [ -f "$1/package.json" ]; then
-  version=$(node -v 2>/dev/null)
-  echo "{\"label\": \"$version\"}"
-fi
-```
-
-This adds the Node.js version to any folder containing a `package.json`.
-
-### Script probe contract
-
-- **Input**: The working directory path is passed as `$1`
-- **Output**: A JSON object on stdout with at least a `label` field
-- **No output**: If the probe doesn't apply, output nothing (exit silently)
-- **Timeout**: Probes are killed after 5 seconds
+- Confirm whether probes still exist as a planned feature and where they belong architecturally.
+- If they do, document the actual implementation rather than the older proposed design.
+- If they do not, remove this page and any remaining references to probes from the docs and marketing copy.

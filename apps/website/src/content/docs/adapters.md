@@ -3,42 +3,55 @@ title: Adapters
 description: How gmux understands what your process is doing.
 ---
 
-Adapters are session-level intelligence. They teach gmuxr how to interpret specific tools, providing rich status information that appears in the sidebar.
+Adapters teach gmux how to interpret specific tools. When you launch a session, gmux automatically detects what you're running and activates the right adapter.
 
-## How adapters work
+This page is the high-level overview. For implementation details, see [Writing an Adapter](/develop/writing-adapters). For the runtime model behind `gmuxr`, `gmuxd`, session files, and resume, see [Adapter Architecture](/develop/adapter-architecture).
 
-When you run `gmuxr pi`, gmuxr recognizes the `pi` command and activates the pi adapter. The adapter monitors the child process and reports structured status:
+## What adapters do
 
-- **thinking** — the agent is processing
-- **waiting for input** — the agent needs your attention
-- **editing** — the agent is modifying files
+An adapter watches the terminal output of your process and reports structured status to the sidebar:
 
-This status appears in the sidebar, so you can see at a glance which sessions need attention.
+- **Active** — the tool is working (green pulsing dot)
+- **Attention** — the tool needs your input (orange dot)
+- **Error** — something went wrong (red dot)
 
-## Built-in adapters
+Without an adapter, gmux still tracks whether the process is alive — but with one, you get meaningful at-a-glance status.
 
-| Adapter | Detects | Status examples |
-|---------|---------|-----------------|
-| **pi** | `pi` command | thinking, waiting for input, editing |
-| **pytest** | `pytest` command | 47/47 passing, 3 failing, running |
-| **generic** | Everything else | active, idle (30s), exited (0) |
+## Automatic detection
 
-## The generic adapter
+You don't configure adapters. gmux recognizes tools by their command name:
 
-Unknown commands get the generic adapter automatically. It provides:
+```bash
+gmuxr pi            # → pi adapter (spinner detection, session resume)
+gmuxr bash          # → shell adapter (terminal title tracking)
+gmuxr -- make build # → shell adapter
+```
 
-- **Activity detection** — tracks stdout/stderr activity
-- **Silence timeout** — reports idle after 30 seconds of no output
-- **Exit tracking** — reports exit code when the process ends
+If no specific adapter matches, the **shell** adapter takes over. It tracks terminal title changes so your shell's working directory appears in the sidebar, but it doesn't report rich activity status.
 
-## Self-reporting via `$GMUX_SOCKET`
+## Beyond status: session files
 
-Any child process can report its own status without a custom adapter. gmuxr sets the `$GMUX_SOCKET` environment variable pointing to its Unix socket:
+Some adapters understand more than just terminal output. The **pi** adapter knows where pi stores its session files, how to extract conversation titles from them, and how to resume previous sessions. This means:
+
+- Resumable sessions appear in the sidebar even when nothing is running
+- Session titles show the first message you sent, not just `pi`
+- Renaming a session with `/name` updates the sidebar in real time
+
+See [Integrations → pi](/integrations/pi) for the concrete behavior.
+
+## Self-reporting
+
+Any process can report its own status without a custom adapter. `gmuxr` sets `$GMUX_SOCKET` in the child's environment:
 
 ```bash
 curl -X PUT --unix-socket "$GMUX_SOCKET" \
   http://localhost/status \
-  -d '{"state": "building", "detail": "step 3/5"}'
+  -d '{"label": "building", "state": "active"}'
 ```
 
-This is how tools can integrate with gmux without any changes to gmuxr itself.
+Self-reported status takes priority over adapter-detected status. This lets tools integrate with gmux directly, without changes to gmux itself.
+
+## Learn more
+
+- Want to add support for a new tool? See [Writing an Adapter](/develop/writing-adapters).
+- Want to understand how `gmuxr`, `gmuxd`, session files, and resume fit together? See [Adapter Architecture](/develop/adapter-architecture).

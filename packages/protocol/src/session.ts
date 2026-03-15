@@ -32,6 +32,8 @@ export const SessionSchema = z.object({
   subtitle: z.string().optional(),
   status: SessionStatusSchema.optional().nullable(),
   unread: z.boolean().optional().default(false),
+  resumable: z.boolean().optional().default(false),
+  resume_key: z.string().optional(),
   socket_path: z.string().optional(),
 })
 

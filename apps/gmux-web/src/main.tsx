@@ -34,6 +34,8 @@ function toUISession(s: ProtocolSession): Session {
     subtitle: s.subtitle ?? '',
     status: s.status ?? null,
     unread: s.unread ?? false,
+    resumable: (s as any).resumable ?? false,
+    resume_key: (s as any).resume_key ?? '',
     socket_path: s.socket_path ?? '',
   }
 }
@@ -48,6 +50,14 @@ async function fetchSessions(): Promise<Session[]> {
 
 async function killSession(sessionId: string): Promise<void> {
   await fetch('/trpc/sessions.kill', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId }),
+  })
+}
+
+async function resumeSession(sessionId: string): Promise<void> {
+  await fetch('/trpc/sessions.resume', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId }),
@@ -255,7 +265,7 @@ function formatAge(iso: string): string {
 }
 
 function dotClass(session: Session): string {
-  if (!session.alive) return 'dead'
+  if (!session.alive && !session.resumable) return 'dead'
   if (!session.status) return 'paused'
   return session.status.state
 }
@@ -293,7 +303,7 @@ function SessionItem({
 
   return (
     <div
-      class={`session-item ${selected ? 'selected' : ''} ${!session.alive ? 'dead' : ''}`}
+      class={`session-item ${selected ? 'selected' : ''} ${!session.alive && !session.resumable ? 'dead' : ''}`}
       onClick={onClick}
     >
       <div class="session-content">
@@ -405,69 +415,7 @@ function Sidebar({
   )
 }
 
-function SessionDetail({ session }: { session: Session }) {
-  const shortCwd = session.cwd.replace(/^\/home\/[^/]+/, '~')
 
-  return (
-    <div class="session-detail">
-      <div class="detail-hero">
-        <div class="detail-hero-status">
-          <span class={`session-dot ${dotClass(session)}`} style={{ width: 10, height: 10 }} />
-          <span class="detail-hero-state">
-            {session.alive
-              ? session.status?.label ?? 'running'
-              : session.exit_code === 0 ? 'completed' : `exited (${session.exit_code})`
-            }
-          </span>
-        </div>
-        <div class="detail-hero-cwd">{shortCwd}</div>
-      </div>
-
-      <div class="detail-grid">
-        <div class="detail-section">
-          <div class="detail-label">Command</div>
-          <div class="detail-value">{session.command.join(' ')}</div>
-        </div>
-        <div class="detail-section">
-          <div class="detail-label">Adapter</div>
-          <div class="detail-value">{session.kind}</div>
-        </div>
-        <div class="detail-section">
-          <div class="detail-label">Session</div>
-          <div class="detail-value">{session.id}</div>
-        </div>
-        <div class="detail-section">
-          <div class="detail-label">Started</div>
-          <div class="detail-value">{formatAge(session.started_at)} ago</div>
-        </div>
-        {session.pid && (
-          <div class="detail-section">
-            <div class="detail-label">PID</div>
-            <div class="detail-value">{session.pid}</div>
-          </div>
-        )}
-        {!session.alive && session.exit_code !== null && (
-          <div class="detail-section">
-            <div class="detail-label">Exit Code</div>
-            <div class="detail-value" style={{
-              color: session.exit_code === 0 ? 'var(--status-success)' : 'var(--status-error)'
-            }}>
-              {session.exit_code}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div class="session-actions">
-        {session.alive ? (
-          <button class="btn btn-danger" onClick={() => killSession(session.id)}>Kill Session</button>
-        ) : (
-          <button class="btn btn-primary" disabled>Resume Session</button>
-        )}
-      </div>
-    </div>
-  )
-}
 
 /**
  * Single xterm.js instance with reconnecting WebSocket.
@@ -849,7 +797,13 @@ function App() {
 
   const handleSelect = useCallback((id: string) => {
     setSelectedId(id)
-  }, [])
+    // If resumable, resume it. The session will transition in-place
+    // (alive: true, socket_path set) via SSE upsert, then the terminal opens.
+    const sess = sessions.find(s => s.id === id)
+    if (sess?.resumable) {
+      resumeSession(id).catch(err => console.error('resume failed:', err))
+    }
+  }, [sessions])
 
   const canAttach = selected?.alive && !USE_MOCK
 
@@ -888,12 +842,8 @@ function App() {
               Retry
             </button>
           </div>
-        ) : selected ? (
-          canAttach ? (
-            <TerminalView sessionId={selected.id} />
-          ) : (
-            <SessionDetail session={selected} />
-          )
+        ) : selected && canAttach ? (
+          <TerminalView sessionId={selected.id} />
         ) : (
           <EmptyState />
         )}
