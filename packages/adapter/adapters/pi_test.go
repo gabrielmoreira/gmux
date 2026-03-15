@@ -83,6 +83,9 @@ func TestPiMonitorSpinner(t *testing.T) {
 
 func TestPiImplementsCapabilities(t *testing.T) {
 	var a adapter.Adapter = NewPi()
+	if _, ok := a.(adapter.Launchable); !ok {
+		t.Fatal("should implement Launchable")
+	}
 	if _, ok := a.(adapter.SessionFiler); !ok {
 		t.Fatal("should implement SessionFiler")
 	}

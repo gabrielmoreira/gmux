@@ -1,0 +1,235 @@
+---
+title: Adapter Architecture
+description: How adapters, gmuxr, and gmuxd work together at runtime.
+---
+
+This page describes the runtime architecture behind gmux adapters: which component does what, how sessions are discovered, how file-backed integrations work, and how children can report status back to gmux.
+
+Read this page if you are working on gmux internals, debugging adapter behavior, or trying to understand how a launched process becomes a live or resumable sidebar entry.
+
+If you want the user-facing overview, see [Adapters](/adapters). If you want to add support for a new tool, see [Writing an Adapter](/develop/writing-adapters).
+
+## Two processes, one adapter system
+
+Adapters are defined once in `packages/adapter` and used by both `gmuxr` and `gmuxd`.
+
+- **`gmuxr`** is per-session. It launches the child, owns the PTY, injects environment variables, and interprets live output.
+- **`gmuxd`** is per-machine. It discovers running sessions, watches adapter-owned files, and surfaces resumable sessions.
+
+That split is why the adapter system is a set of small interfaces instead of one giant one.
+
+## Responsibility split
+
+| Concern | Component | How |
+|---|---|---|
+| Command matching | `gmuxr` | `Adapter.Match()` |
+| Child env injection | `gmuxr` | `Adapter.Env()` |
+| PTY output monitoring | `gmuxr` | `Adapter.Monitor()` |
+| Child self-report API | `gmuxr` | Unix socket HTTP endpoints |
+| Launch menu discovery | `gmuxd` | `Launchable` + compiled adapter set |
+| Session file discovery | `gmuxd` | `SessionFiler` |
+| Session file attribution | `gmuxd` | file scanner + matching |
+| Live file monitoring | `gmuxd` | `FileMonitor.ParseNewLines()` |
+| Resumable session discovery | `gmuxd` | `SessionFiler` + `Resumer` |
+| Resume command generation | `gmuxd` | `Resumer.ResumeCommand()` |
+
+## Launch lifecycle
+
+When you run a command through `gmuxr`:
+
+1. `gmuxr` resolves the adapter
+   - `GMUX_ADAPTER=<name>` override, if set
+   - otherwise first matching registered adapter wins
+   - otherwise shell fallback
+2. `gmuxr` starts the child under a PTY
+3. `gmuxr` injects the standard `GMUX_*` environment variables
+4. `gmuxr` feeds PTY output into `Adapter.Monitor()`
+5. `gmuxr` serves the session on its Unix socket (`/meta`, `/events`, terminal attach, child callbacks)
+6. `gmuxd` discovers the runner socket, queries `/meta`, and subscribes to `/events`
+
+The command itself is never rewritten by the adapter. Adapters can add environment variables, but what the user launched is exactly what runs.
+
+## Adapter resolution
+
+Adapter selection happens entirely in `gmuxr`:
+
+1. **Explicit override**: `GMUX_ADAPTER=<name>`
+2. **Registered adapters in order**: first `Match()` wins
+3. **Shell fallback**: always matches, always last
+
+This keeps matching cheap and predictable. A false negative is low-cost because the shell adapter still gives basic behavior.
+
+## Launchers and `Launchable`
+
+Launch menu entries are now derived from adapter instances instead of a parallel global launcher registry.
+
+Adapters that want to appear in the UI implement:
+
+```go
+type Launchable interface {
+    Launchers() []Launcher
+}
+```
+
+`gmuxd` aggregates launchers from the compiled adapter set by checking which adapters implement `Launchable`.
+
+A few important consequences:
+
+- launch menu support is optional, like other adapter capabilities
+- one adapter can expose zero, one, or many launch presets
+- `gmuxd` no longer shells out to `gmuxr adapters` to discover launchers
+- the shell fallback also implements `Launchable`, so shell appears in the UI without a separate special-case launcher registry
+
+The current built-in launcher ordering is simple:
+
+- non-fallback adapters contribute launchers in adapter registration order
+- shell is appended last
+
+## File-backed adapters
+
+Some tools write session or conversation files to disk. Those integrations use optional capabilities discovered by `gmuxd`.
+
+### `SessionFiler`
+
+```go
+type SessionFiler interface {
+    SessionRootDir() string
+    SessionDir(cwd string) string
+    ParseSessionFile(path string) (*SessionFileInfo, error)
+}
+```
+
+Use this when a tool stores session state on disk and gmux should be able to discover or inspect it.
+
+- `SessionRootDir()` returns the root containing all per-project session directories
+- `SessionDir(cwd)` returns the directory for one working directory
+- `ParseSessionFile(path)` extracts display metadata such as ID, title, cwd, created time, and message count
+
+### `FileMonitor`
+
+```go
+type FileMonitor interface {
+    ParseNewLines(lines []string) []FileEvent
+}
+```
+
+Use this when new file content should update the live sidebar. `gmuxd` tracks offsets and passes only appended lines.
+
+Typical uses:
+- title changes
+- status updates inferred from appended records
+- metadata updates from structured session logs
+
+### `Resumer`
+
+```go
+type Resumer interface {
+    ResumeCommand(info *SessionFileInfo) []string
+    CanResume(path string) bool
+}
+```
+
+Use this when a finished session can be resumed later.
+
+- `CanResume(path)` filters out invalid or empty files
+- `ResumeCommand(info)` tells gmux how to resume the session when the user clicks it
+
+## File attribution and live updates
+
+For adapters that implement `SessionFiler`, `gmuxd` does more than just scan files.
+
+### Session file attribution
+
+When a tool starts writing files in a working directory, `gmuxd` needs to figure out which running session owns which file.
+
+Typical flow:
+
+1. watch the adapter's `SessionDir(cwd)`
+2. notice file creation or writes
+3. if only one live session matches that cwd, attribute the file directly
+4. if multiple sessions share the cwd, use content-based matching
+5. once attributed, keep the association sticky until a different file clearly takes over
+
+This is what lets gmux connect a running session to a later-created conversation file.
+
+### Live file monitoring
+
+After attribution, `gmuxd` can continue watching the file:
+
+1. read newly appended lines
+2. pass them to `ParseNewLines()`
+3. apply returned `FileEvent`s to the live session
+4. publish the updates to the frontend via SSE
+
+That is how file-backed tools can update titles or other metadata in real time even when those changes never appear in terminal output.
+
+## Resumable session discovery
+
+For adapters that implement both `SessionFiler` and `Resumer`, `gmuxd` can surface non-running sessions in the sidebar.
+
+Typical flow:
+
+1. enumerate files under `SessionRootDir()` / known `SessionDir(cwd)` directories
+2. filter them with `CanResume(path)`
+3. parse them with `ParseSessionFile(path)`
+4. deduplicate them against live sessions by resume key / file identity
+5. publish them as resumable entries
+
+When the user resumes one, `gmuxd` uses `ResumeCommand()` to launch the new live session.
+
+For a concrete example, see [pi](/integrations/pi).
+
+## Child awareness protocol
+
+Every child launched by `gmuxr` gets a small protocol for detecting gmux and reporting back.
+
+### Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `GMUX` | Simple detection flag (`1`) |
+| `GMUX_SOCKET` | Unix socket path for callbacks to the runner |
+| `GMUX_SESSION_ID` | Unique session identifier |
+| `GMUX_ADAPTER` | Name of the matched adapter |
+| `GMUX_VERSION` | Protocol/version marker |
+
+Most tools ignore these. gmux-aware tools, wrappers, or hooks can use them to integrate directly.
+
+### Child-to-runner endpoints
+
+Served by `gmuxr` on the session socket:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/meta` | `GET` | Read current session metadata |
+| `/meta` | `PATCH` | Update title and subtitle |
+| `/status` | `PUT` | Set or clear application status |
+| `/events` | `GET` | Subscribe to live state changes |
+
+Example:
+
+```bash
+curl --unix-socket "$GMUX_SOCKET" http://localhost/status \
+  -X PUT -H 'Content-Type: application/json' \
+  -d '{"label":"building","state":"active"}'
+```
+
+This is the escape hatch for tools that want native gmux integration without needing a custom PTY parser.
+
+## Status sources
+
+A session's displayed state can come from multiple places:
+
+- process lifecycle defaults from gmux itself
+- adapter PTY monitoring via `Monitor()`
+- file-backed updates via `FileMonitor`
+- direct child callbacks via `/status` and `PATCH /meta`
+
+The important design point is that adapters do not own the whole session model. They contribute structured hints into a runner-owned session state that `gmuxd` then aggregates and serves.
+
+## Built-in examples
+
+- **Shell**: fallback adapter; watches terminal title escape sequences and contributes the default shell launcher
+- **pi**: file-backed adapter; supports launch presets, status detection, title extraction, live file updates, and resume
+
+See [Adapters](/adapters) for the high-level overview and [pi](/integrations/pi) for the concrete integration behavior.

@@ -14,12 +14,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gmuxapp/gmux/packages/adapter"
-	"github.com/gmuxapp/gmux/packages/adapter/adapters"
 	"github.com/gmuxapp/gmux/cli/gmuxr/internal/localterm"
 	"github.com/gmuxapp/gmux/cli/gmuxr/internal/naming"
 	"github.com/gmuxapp/gmux/cli/gmuxr/internal/ptyserver"
 	"github.com/gmuxapp/gmux/cli/gmuxr/internal/session"
+	"github.com/gmuxapp/gmux/packages/adapter"
+	"github.com/gmuxapp/gmux/packages/adapter/adapters"
 )
 
 const version = "0.1.0"
@@ -30,8 +30,7 @@ func main() {
 
 	// Subcommand: gmuxr adapters → print launcher JSON and exit
 	if len(os.Args) > 1 && os.Args[1] == "adapters" {
-		// Import adapters package to trigger init() registrations
-		out, _ := json.Marshal(adapters.Launchers)
+		out, _ := json.Marshal(adapters.AllLaunchers())
 		fmt.Println(string(out))
 		return
 	}

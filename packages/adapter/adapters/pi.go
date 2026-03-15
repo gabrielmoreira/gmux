@@ -13,18 +13,13 @@ import (
 
 // Compile-time interface checks.
 var (
+	_ adapter.Launchable   = (*Pi)(nil)
 	_ adapter.SessionFiler = (*Pi)(nil)
 	_ adapter.FileMonitor  = (*Pi)(nil)
 	_ adapter.Resumer      = (*Pi)(nil)
 )
 
 func init() {
-	Launchers = append(Launchers, adapter.Launcher{
-		ID:          "pi",
-		Label:       "pi",
-		Command:     []string{"pi"},
-		Description: "Coding agent",
-	})
 	All = append(All, NewPi())
 }
 
@@ -55,6 +50,15 @@ func (p *Pi) Match(cmd []string) bool {
 
 // Env returns no extra environment variables.
 func (p *Pi) Env(_ adapter.EnvContext) []string { return nil }
+
+func (p *Pi) Launchers() []adapter.Launcher {
+	return []adapter.Launcher{{
+		ID:          "pi",
+		Label:       "pi",
+		Command:     []string{"pi"},
+		Description: "Coding agent",
+	}}
+}
 
 // Spinner characters used by pi's TUI (braille pattern dots).
 var piSpinnerChars = [][]byte{

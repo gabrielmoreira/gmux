@@ -4,18 +4,26 @@ import "time"
 
 // SessionFileInfo holds metadata extracted from a tool's session file.
 type SessionFileInfo struct {
-	ID           string    // Tool's session identifier (becomes resume_key)
-	Title        string    // Display title for sidebar
-	Cwd          string    // Working directory
-	Created      time.Time // When the session was created
-	MessageCount int       // Number of messages/interactions
-	FilePath     string    // Absolute path to the file
+	ID           string
+	Title        string
+	Cwd          string
+	Created      time.Time
+	MessageCount int
+	FilePath     string
 }
 
 // FileEvent represents a meaningful change extracted from new file content.
 type FileEvent struct {
-	Title  string  // If non-empty, update session title
-	Status *Status // If non-nil, update session status
+	Title  string
+	Status *Status
+}
+
+// Launchable is implemented by adapters that want to expose one or more
+// launch presets in the UI.
+type Launchable interface {
+	// Launchers returns the launch presets this adapter contributes.
+	// Adapters may return zero, one, or many presets.
+	Launchers() []Launcher
 }
 
 // SessionFiler is implemented by adapters whose tools write session

@@ -28,6 +28,16 @@ func TestShellEnvNil(t *testing.T) {
 	}
 }
 
+func TestShellLaunchers(t *testing.T) {
+	launchers := NewShell().Launchers()
+	if len(launchers) != 1 {
+		t.Fatalf("expected 1 launcher, got %d", len(launchers))
+	}
+	if launchers[0].ID != "shell" {
+		t.Fatalf("expected shell launcher, got %q", launchers[0].ID)
+	}
+}
+
 func TestShellMonitorPlainOutput(t *testing.T) {
 	if NewShell().Monitor([]byte("hello")) != nil {
 		t.Fatal("should not report status for plain output")

@@ -13,53 +13,26 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gmuxapp/gmux/packages/adapter"
+	"github.com/gmuxapp/gmux/packages/adapter/adapters"
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/discovery"
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/store"
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/wsproxy"
 )
 
-type Launcher struct {
-	ID          string   `json:"id"`
-	Label       string   `json:"label"`
-	Command     []string `json:"command"`
-	Description string   `json:"description,omitempty"`
-}
-
 type LaunchConfig struct {
-	DefaultLauncher string     `json:"default_launcher"`
-	Launchers       []Launcher `json:"launchers"`
+	DefaultLauncher string             `json:"default_launcher"`
+	Launchers       []adapter.Launcher `json:"launchers"`
 }
 
-// discoverLaunchers calls "gmuxr adapters" to get the adapter-registered
-// launchers, then prepends shell as the default.
-func discoverLaunchers(gmuxrPath string) LaunchConfig {
-	cfg := LaunchConfig{
+// discoverLaunchers derives launchers from the compiled adapter set.
+func discoverLaunchers() LaunchConfig {
+	launchers := adapters.AllLaunchers()
+	log.Printf("launchers: discovered %d adapter(s): %v", len(launchers), launcherNames(launchers))
+	return LaunchConfig{
 		DefaultLauncher: "shell",
-		Launchers: []Launcher{
-			{ID: "shell", Label: "Shell", Command: nil, Description: "Default shell"},
-		},
+		Launchers:       launchers,
 	}
-
-	if gmuxrPath == "" {
-		log.Printf("launchers: gmuxr not found, only shell available")
-		return cfg
-	}
-
-	out, err := exec.Command(gmuxrPath, "adapters").Output()
-	if err != nil {
-		log.Printf("launchers: gmuxr adapters failed: %v", err)
-		return cfg
-	}
-
-	var adapters []Launcher
-	if err := json.Unmarshal(out, &adapters); err != nil {
-		log.Printf("launchers: failed to parse adapter list: %v", err)
-		return cfg
-	}
-
-	cfg.Launchers = append(cfg.Launchers, adapters...)
-	log.Printf("launchers: discovered %d adapter(s): %v", len(adapters), adapterNames(adapters))
-	return cfg
 }
 
 // resolveGmuxr finds the gmuxr binary.
@@ -78,7 +51,7 @@ func resolveGmuxr() string {
 	return ""
 }
 
-func adapterNames(ls []Launcher) []string {
+func launcherNames(ls []adapter.Launcher) []string {
 	names := make([]string, len(ls))
 	for i, l := range ls {
 		names[i] = l.ID
@@ -91,7 +64,7 @@ func main() {
 	if gmuxrBin != "" {
 		log.Printf("gmuxr: %s", gmuxrBin)
 	}
-	launchConfig := discoverLaunchers(gmuxrBin)
+	launchConfig := discoverLaunchers()
 
 	sessions := store.New()
 	subs := discovery.NewSubscriptions(sessions)
