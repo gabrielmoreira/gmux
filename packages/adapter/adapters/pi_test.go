@@ -78,12 +78,30 @@ func TestPiMonitorPlainOutput(t *testing.T) {
 }
 
 func TestPiMonitorSpinner(t *testing.T) {
-	s := NewPi().Monitor([]byte("⠋ Working..."))
+	pi := NewPi()
+
+	// Spinner detected → working
+	s := pi.Monitor([]byte("⠋ Working..."))
 	if s == nil {
 		t.Fatal("should detect spinner")
 	}
-	if s.State != "active" || s.Label != "working" {
-		t.Fatalf("expected active/working, got %s/%s", s.State, s.Label)
+	if !s.Working || s.Label != "working" {
+		t.Fatalf("expected Working=true label=working, got Working=%v label=%s", s.Working, s.Label)
+	}
+
+	// Non-spinner after working → clear
+	s = pi.Monitor([]byte("some normal output"))
+	if s == nil {
+		t.Fatal("should return clear signal after working")
+	}
+	if s.Working {
+		t.Fatal("expected Working=false")
+	}
+
+	// Non-spinner when already cleared → nil (no change)
+	s = pi.Monitor([]byte("more normal output"))
+	if s != nil {
+		t.Fatal("should return nil when not transitioning")
 	}
 }
 

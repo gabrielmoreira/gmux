@@ -2,19 +2,9 @@ import { z } from 'zod'
 
 // Schema v2 — matches gmuxr's GET /meta and gmuxd's store.Session
 
-export const StatusStateSchema = z.enum([
-  'active',
-  'attention',
-  'success',
-  'error',
-  'paused',
-  'info',
-])
-
 export const SessionStatusSchema = z.object({
   label: z.string(),
-  state: StatusStateSchema,
-  icon: z.string().optional(),
+  working: z.boolean(),
 }).nullable()
 
 export const SessionSchema = z.object({
@@ -47,10 +37,8 @@ export const AttachResponseSchema = z.object({
   socket_path: z.string().optional(),
 })
 
-// Legacy aliases for backward compatibility during migration
 export const SessionSummarySchema = SessionSchema
 export type SessionSummary = z.infer<typeof SessionSchema>
 export type Session = z.infer<typeof SessionSchema>
 export type SessionStatus = z.infer<typeof SessionStatusSchema>
-export type StatusState = z.infer<typeof StatusStateSchema>
 export type AttachResponse = z.infer<typeof AttachResponseSchema>

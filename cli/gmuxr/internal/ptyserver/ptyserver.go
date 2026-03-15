@@ -248,15 +248,6 @@ func (s *Server) handlePutStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate state
-	switch status.State {
-	case "active", "attention", "success", "error", "paused", "info":
-		// ok
-	default:
-		http.Error(w, "invalid state: must be active|attention|success|error|paused|info", http.StatusBadRequest)
-		return
-	}
-
 	s.state.SetStatus(&status)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -350,6 +341,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	s.clients[client] = struct{}{}
 	s.mu.Unlock()
 
+	// Client connected — they'll see the scrollback, so clear unread
+	if s.state != nil {
+		s.state.SetUnread(false)
+	}
+
 	// Always send reset frame — even with empty scrollback.
 	// This ensures switching to a new/empty session clears previous content.
 	// Wrapped in DEC 2026 synchronized output so xterm renders atomically.
@@ -435,9 +431,7 @@ func (s *Server) readPTY() {
 						s.state.SetTitle(status.Title)
 						status.Title = "" // don't leak into status JSON
 					}
-					if status.State != "" {
-						s.state.SetStatus(status)
-					}
+					s.state.SetStatus(status)
 				}
 			}
 
@@ -449,7 +443,13 @@ func (s *Server) readPTY() {
 			for c := range s.clients {
 				clients = append(clients, c)
 			}
+			hasRemoteClients := len(clients) > 0
 			s.mu.Unlock()
+
+			// Mark unread when output arrives with no remote viewers
+			if !hasRemoteClients && s.state != nil {
+				s.state.SetUnread(true)
+			}
 
 			// Write to local terminal (if attached)
 			if localOut != nil {

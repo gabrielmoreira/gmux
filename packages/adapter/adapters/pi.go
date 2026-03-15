@@ -28,7 +28,9 @@ func init() {
 // Recognizes pi/pi-coding-agent commands and monitors PTY output for
 // spinner patterns to report active/idle status. Implements SessionFiler,
 // FileMonitor, and Resumer for session file discovery and resume.
-type Pi struct{}
+type Pi struct {
+	wasActive bool // tracks whether last Monitor call returned active
+}
 
 func NewPi() *Pi { return &Pi{} }
 
@@ -76,17 +78,21 @@ var piSpinnerChars = [][]byte{
 }
 
 // Monitor detects pi's spinner pattern in PTY output.
+// Returns Working=true when spinner is visible, Working=false when it stops.
 func (p *Pi) Monitor(output []byte) *adapter.Status {
 	for _, sc := range piSpinnerChars {
 		if idx := bytes.Index(output, sc); idx >= 0 {
 			rest := output[idx+len(sc):]
 			if bytes.Contains(rest, []byte("Working")) {
-				return &adapter.Status{
-					Label: "working",
-					State: "active",
-				}
+				p.wasActive = true
+				return &adapter.Status{Label: "working", Working: true}
 			}
 		}
+	}
+	// Spinner not found — if we were previously active, clear working state
+	if p.wasActive {
+		p.wasActive = false
+		return &adapter.Status{}
 	}
 	return nil
 }

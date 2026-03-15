@@ -30,11 +30,10 @@ type Session struct {
 	TerminalRows  uint16   `json:"terminal_rows,omitempty"`
 }
 
-// Status is the application-reported status per schema v2.
+// Status is the application-reported status.
 type Status struct {
-	Label string `json:"label"`
-	State string `json:"state"` // active|attention|success|error|paused|info
-	Icon  string `json:"icon,omitempty"`
+	Label   string `json:"label"`
+	Working bool   `json:"working"`
 }
 
 type Event struct {

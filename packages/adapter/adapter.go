@@ -7,10 +7,9 @@ import "path/filepath"
 
 // Status represents an application-reported status for the sidebar.
 type Status struct {
-	Label string `json:"label"`           // Short text: "thinking", "3/10 passed"
-	State string `json:"state"`           // active|attention|success|error|paused|info
-	Icon  string `json:"icon,omitempty"`  // Optional icon hint
-	Title string `json:"title,omitempty"` // If set, updates the session title
+	Label   string `json:"label"`             // display text ("working", "3/5 passed")
+	Working bool   `json:"working"`           // true while adapter is busy (spinner, building)
+	Title   string `json:"title,omitempty"`   // if set, updates the session title (transient)
 }
 
 // Adapter teaches gmux how to work with a specific child process.
@@ -34,7 +33,8 @@ type Adapter interface {
 
 	// Monitor receives PTY output and optionally produces a Status.
 	// Called on every PTY read with raw bytes. Must be cheap — no
-	// allocations or regex compilation per call. Return nil for no change.
+	// allocations or regex compilation per call.
+	// Return nil for no change.
 	Monitor(output []byte) *Status
 }
 

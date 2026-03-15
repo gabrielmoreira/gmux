@@ -61,7 +61,7 @@ func TestSetExited(t *testing.T) {
 
 func TestSetStatus(t *testing.T) {
 	s := New(Config{ID: "sess-1", Command: []string{"echo"}, Kind: "generic"})
-	s.SetStatus(&adapter.Status{Label: "thinking", State: "active"})
+	s.SetStatus(&adapter.Status{Label: "thinking", Working: true})
 
 	if s.Status == nil {
 		t.Fatal("status should be set")
@@ -100,7 +100,7 @@ func TestJSON(t *testing.T) {
 		Title:      "test session",
 	})
 	s.SetRunning(999)
-	s.SetStatus(&adapter.Status{Label: "working", State: "active"})
+	s.SetStatus(&adapter.Status{Label: "working", Working: true})
 
 	data, err := s.JSON()
 	if err != nil {
@@ -134,7 +134,7 @@ func TestSubscribeEvents(t *testing.T) {
 	ch := s.Subscribe()
 	defer s.Unsubscribe(ch)
 
-	s.SetStatus(&adapter.Status{Label: "test", State: "info"})
+	s.SetStatus(&adapter.Status{Label: "test"})
 
 	evt := <-ch
 	if evt.Type != "status" {

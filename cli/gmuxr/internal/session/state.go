@@ -93,6 +93,17 @@ func (s *State) SetExited(exitCode int) {
 	s.emit(Event{Type: "exit", Data: map[string]int{"exit_code": exitCode}})
 }
 
+// SetUnread marks the session as having unseen output (or clears it).
+func (s *State) SetUnread(unread bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Unread == unread {
+		return // no change, avoid noisy events
+	}
+	s.Unread = unread
+	s.emit(Event{Type: "meta", Data: map[string]any{"unread": unread}})
+}
+
 // SetStatus updates the application status (from adapter or child).
 func (s *State) SetStatus(status *adapter.Status) {
 	s.mu.Lock()

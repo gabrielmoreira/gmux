@@ -408,10 +408,6 @@ body {
   animation: subtle-pulse 2.5s ease-in-out infinite;
 }
 
-.session-indicator-dot.needs-input {
-  background: oklch(72% 0.17 55);
-}
-
 @keyframes subtle-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
@@ -517,13 +513,8 @@ body {
   flex-shrink: 0;
 }
 
-.session-dot.active  { background: var(--accent); }
-.session-dot.attention { background: oklch(72% 0.17 55); }
-.session-dot.success { background: var(--status-success); }
-.session-dot.error   { background: var(--status-error); }
-.session-dot.paused  { background: var(--status-paused); }
-.session-dot.info    { background: var(--status-info); }
-.session-dot.dead    { background: transparent; border: 1.5px solid var(--text-muted); }
+.session-dot.working { background: var(--accent); }
+.session-dot.idle    { background: var(--text-muted); }
 
 /* ── Main Panel ── */
 
@@ -604,12 +595,7 @@ body {
   flex-shrink: 0;
 }
 
-.main-header-status.active { color: var(--accent); }
-.main-header-status.attention { color: oklch(72% 0.17 55); }
-.main-header-status.success { color: var(--status-success); }
-.main-header-status.error { color: var(--status-error); }
-.main-header-status.paused { color: var(--text-muted); }
-.main-header-status.info { color: var(--status-info); }
+.main-header-status.working { color: var(--accent); }
 
 .header-kill-btn {
   background: none;

@@ -292,29 +292,18 @@ function formatAge(iso: string): string {
   return `${days}d`
 }
 
-function dotClass(session: Session): string {
-  if (!session.alive && !session.resumable) return 'dead'
-  if (!session.status) return 'paused'
-  return session.status.state
-}
-
 function folderDotColor(folder: Folder): string | null {
-  // Attention (needs input) takes priority — warm dot
-  if (folder.sessions.some(s => s.alive && s.status?.state === 'attention'))
-    return 'oklch(72% 0.17 55)'
-  // Active (working) — accent cyan
-  if (folder.sessions.some(s => s.alive && s.status?.state === 'active'))
+  if (folder.sessions.some(s => s.alive && s.status?.working))
     return 'var(--accent)'
   return null
 }
 
 // ── Components ──
 
-/** Determine if a session should show a right-side indicator dot and which kind. */
-function sessionIndicator(session: Session): 'working' | 'needs-input' | null {
+/** Determine if a session should show a working indicator dot. */
+function sessionIndicator(session: Session): 'working' | null {
   if (!session.alive || !session.status) return null
-  if (session.status.state === 'attention') return 'needs-input'
-  if (session.status.state === 'active') return 'working'
+  if (session.status.working) return 'working'
   return null
 }
 
@@ -340,7 +329,7 @@ function SessionItem({
       <div class="session-content">
         <div class={`session-title${session.unread ? ' unread' : ''}`}>{session.title}</div>
         <div class="session-meta">
-          {session.status && (
+          {session.status?.label && (
             <>
               <span class="session-status-label">{session.status.label}</span>
               <span class="session-meta-sep">·</span>
@@ -934,10 +923,10 @@ function MainHeader({ session, onKill }: { session: Session | null; onKill?: (id
         </div>
       </div>
       <div class="main-header-right">
-        {session.status && (
-          <div class={`main-header-status ${session.status.state}`}>
+        {session.status && session.status.label && (
+          <div class={`main-header-status ${session.status.working ? 'working' : ''}`}>
             <span
-              class={`session-dot ${session.status.state}`}
+              class={`session-dot ${session.status.working ? 'working' : 'idle'}`}
               style={{ width: 5, height: 5 }}
             />
             {session.status.label}
@@ -1043,10 +1032,8 @@ function App() {
       const allSessions = mockFolders.flatMap(f => f.sessions)
       setSessions(allSessions)
       setConnState('connected')
-      // Auto-select: attention > active > any alive
-      const attention = allSessions.find(s => s.alive && s.status?.state === 'attention')
-      const active = allSessions.find(s => s.alive && s.status?.state === 'active')
-      const first = attention ?? active ?? allSessions.find(s => s.alive)
+      // Auto-select first alive session
+      const first = allSessions.find(s => s.alive)
       if (first) setSelectedId(first.id)
     } else {
       // Fetch initial session list
@@ -1054,9 +1041,7 @@ function App() {
         setSessions(list)
         setConnState('connected')
         // Auto-select first alive session
-        const attention = list.find(s => s.alive && s.status?.state === 'attention')
-        const active = list.find(s => s.alive && s.status?.state === 'active')
-        const first = attention ?? active ?? list.find(s => s.alive)
+        const first = list.find(s => s.alive)
         if (first && !selectedId) setSelectedId(first.id)
       }).catch(err => {
         console.error('Failed to fetch sessions:', err)
@@ -1137,11 +1122,7 @@ function App() {
   useEffect(() => {
     if (!selectedId && !hasAutoSelected.current && filteredSessions.length > 0) {
       hasAutoSelected.current = true
-      const best =
-        filteredSessions.find(s => s.alive && s.status?.state === 'attention') ??
-        filteredSessions.find(s => s.alive && s.status?.state === 'active') ??
-        filteredSessions.find(s => s.alive) ??
-        filteredSessions[0]
+      const best = filteredSessions.find(s => s.alive) ?? filteredSessions[0]
       if (best) setSelectedId(best.id)
     }
   }, [filteredSessions, selectedId])

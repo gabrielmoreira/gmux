@@ -8,8 +8,7 @@
 
 export interface SessionStatus {
   label: string
-  state: 'active' | 'attention' | 'success' | 'error' | 'paused' | 'info'
-  icon?: string
+  working: boolean
 }
 
 export interface Session {
@@ -62,7 +61,7 @@ const MOCK_SESSIONS: Session[] = [
     exited_at: null,
     title: 'implement adapter system',
     subtitle: 'iteration 3/10',
-    status: { label: 'thinking', state: 'active', icon: '🤔' },
+    status: { label: 'thinking', working: true },
     unread: false,
     socket_path: '/tmp/gmux-sessions/sess-a1b2c3.sock',
   },
@@ -79,7 +78,7 @@ const MOCK_SESSIONS: Session[] = [
     exited_at: null,
     title: 'fix websocket proxy',
     subtitle: 'waiting for approval',
-    status: { label: 'waiting for approval', state: 'attention' },
+    status: { label: 'waiting for input', working: false },
     unread: true,
     socket_path: '/tmp/gmux-sessions/sess-d4e5f6.sock',
   },
@@ -96,7 +95,7 @@ const MOCK_SESSIONS: Session[] = [
     exited_at: ago(300),
     title: 'setup monorepo',
     subtitle: 'completed',
-    status: { label: 'done', state: 'success' },
+    status: { label: 'done', working: false },
     unread: false,
     socket_path: '/tmp/gmux-sessions/sess-g7h8i9.sock',
   },
@@ -115,7 +114,7 @@ const MOCK_SESSIONS: Session[] = [
     exited_at: null,
     title: 'fix auth bug',
     subtitle: 'running tests',
-    status: { label: 'running tests', state: 'active' },
+    status: { label: 'running tests', working: true },
     unread: true,
     socket_path: '/tmp/gmux-sessions/sess-j1k2l3.sock',
   },
@@ -132,7 +131,7 @@ const MOCK_SESSIONS: Session[] = [
     exited_at: ago(1430),
     title: 'refactor models',
     subtitle: 'exit 1',
-    status: { label: 'failed', state: 'error' },
+    status: { label: 'failed', working: false },
     unread: false,
     socket_path: '/tmp/gmux-sessions/sess-m4n5o6.sock',
   },
@@ -151,7 +150,7 @@ const MOCK_SESSIONS: Session[] = [
     exited_at: null,
     title: 'update API reference',
     subtitle: '',
-    status: { label: 'idle', state: 'paused' },
+    status: { label: 'idle', working: false },
     unread: false,
     socket_path: '/tmp/gmux-sessions/sess-p7q8r9.sock',
   },
@@ -170,7 +169,7 @@ const MOCK_SESSIONS: Session[] = [
     exited_at: null,
     title: 'pytest tests/ -v',
     subtitle: '42/50 passed',
-    status: { label: '42/50 passed', state: 'active' },
+    status: { label: '42/50 passed', working: true },
     unread: false,
     socket_path: '/tmp/gmux-sessions/sess-s1t2u3.sock',
   },
@@ -187,7 +186,7 @@ const MOCK_SESSIONS: Session[] = [
     exited_at: null,
     title: 'add rate limiting',
     subtitle: 'reviewing changes',
-    status: { label: 'info', state: 'info' },
+    status: { label: 'info', working: false },
     unread: false,
     socket_path: '/tmp/gmux-sessions/sess-v4w5x6.sock',
   },
@@ -233,12 +232,11 @@ export function groupByFolder(sessions: Session[]): Folder[] {
     })
   }
 
-  // Sort: folders with attention first, then alive, then by most recent
+  // Sort: folders with working sessions first, then alive, then rest
   const statePriority = (f: Folder): number => {
-    if (f.sessions.some(s => s.alive && s.status?.state === 'attention')) return 0
-    if (f.sessions.some(s => s.alive && s.status?.state === 'active')) return 1
-    if (f.sessions.some(s => s.alive)) return 2
-    return 3
+    if (f.sessions.some(s => s.alive && s.status?.working)) return 0
+    if (f.sessions.some(s => s.alive)) return 1
+    return 2
   }
   return folders.sort((a, b) => {
     const pa = statePriority(a)

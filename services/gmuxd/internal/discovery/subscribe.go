@@ -170,6 +170,7 @@ func (sub *Subscriptions) handleEvent(sessionID, socketPath, eventType string, d
 		var meta struct {
 			Title    string `json:"title"`
 			Subtitle string `json:"subtitle"`
+			Unread   *bool  `json:"unread"`
 		}
 		if err := json.Unmarshal(data, &meta); err != nil {
 			log.Printf("subscribe: %s: bad meta event: %v", sessionID, err)
@@ -180,6 +181,9 @@ func (sub *Subscriptions) handleEvent(sessionID, socketPath, eventType string, d
 		}
 		if meta.Subtitle != "" {
 			sess.Subtitle = meta.Subtitle
+		}
+		if meta.Unread != nil {
+			sess.Unread = *meta.Unread
 		}
 		sub.store.Upsert(sess)
 
@@ -194,11 +198,11 @@ func (sub *Subscriptions) handleEvent(sessionID, socketPath, eventType string, d
 		sess.Alive = false
 		sess.ExitCode = &exit.ExitCode
 		sess.ExitedAt = time.Now().UTC().Format(time.RFC3339)
-		// Set a meaningful status for the exit
+		// Set exit label — exit_code conveys success/error
 		if exit.ExitCode == 0 {
-			sess.Status = &store.Status{Label: "completed", State: "success"}
+			sess.Status = &store.Status{Label: "completed"}
 		} else {
-			sess.Status = &store.Status{Label: fmt.Sprintf("exited (%d)", exit.ExitCode), State: "error"}
+			sess.Status = &store.Status{Label: fmt.Sprintf("exited (%d)", exit.ExitCode)}
 		}
 		sub.store.Upsert(sess)
 

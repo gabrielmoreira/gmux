@@ -395,7 +395,7 @@ func main() {
 			// when gmuxr calls POST /v1/register.
 			sess.Alive = true
 			sess.Resumable = false
-			sess.Status = &store.Status{Label: "starting", State: "active"}
+			sess.Status = &store.Status{Label: "starting", Working: true}
 			sessions.Upsert(sess)
 
 			log.Printf("resume: started gmuxr pid=%d for %s cwd=%s", pid, sessionID, sess.Cwd)

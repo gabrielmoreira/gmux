@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   SessionEventSchema,
   SessionSchema,
-  StatusStateSchema,
   successEnvelope,
+  SessionStatusSchema,
 } from './index.js'
 
 describe('protocol schemas', () => {
@@ -14,7 +14,7 @@ describe('protocol schemas', () => {
       alive: true,
       pid: 12345,
       title: 'test session',
-      status: { label: 'thinking', state: 'active' },
+      status: { label: 'thinking', working: true },
       resize_owner_id: 'device-1',
       terminal_cols: 120,
       terminal_rows: 40,
@@ -22,7 +22,8 @@ describe('protocol schemas', () => {
 
     expect(result.id).toBe('sess-1')
     expect(result.alive).toBe(true)
-    expect(result.status?.state).toBe('active')
+    expect(result.status?.working).toBe(true)
+    expect(result.status?.label).toBe('thinking')
     expect(result.resize_owner_id).toBe('device-1')
     expect(result.terminal_cols).toBe(120)
     expect(result.terminal_rows).toBe(40)
@@ -48,7 +49,7 @@ describe('protocol schemas', () => {
         id: 'sess-1',
         kind: 'pi',
         alive: true,
-        status: { label: 'running', state: 'active' },
+        status: { label: 'running', working: true },
       },
     })
 
@@ -66,15 +67,9 @@ describe('protocol schemas', () => {
     expect(event.type).toBe('session-remove')
   })
 
-  it('validates status states', () => {
-    for (const state of ['active', 'attention', 'success', 'error', 'paused', 'info']) {
-      expect(StatusStateSchema.parse(state)).toBe(state)
-    }
-  })
-
   it('builds typed success envelopes', () => {
-    const Schema = successEnvelope(StatusStateSchema)
-    const parsed = Schema.parse({ ok: true, data: 'active' })
-    expect(parsed.data).toBe('active')
+    const Schema = successEnvelope(SessionStatusSchema)
+    const parsed = Schema.parse({ ok: true, data: { label: 'test', working: false } })
+    expect(parsed.data.label).toBe('test')
   })
 })
