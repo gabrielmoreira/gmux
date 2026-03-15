@@ -3,7 +3,7 @@
 // Pi adapter integration tests. These launch real pi processes through PTYs
 // and verify adapter behavior (matching, spinner detection, session file timing).
 //
-// Run: go test -tags integration -v -timeout 120s -run TestPi ./cli/gmuxr/internal/adapter/adapters/
+// Run: go test -tags integration -v -timeout 120s -run TestPi ./packages/adapter/adapters/
 //
 // These tests serve dual purpose:
 //   1. Verify adapter behavior against real pi output
@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gmuxapp/gmux/cli/gmuxr/internal/adapter"
+	"github.com/gmuxapp/gmux/packages/adapter"
 )
 
 func requirePi(t *testing.T) {
@@ -185,7 +185,7 @@ func TestPiSessionFileLifecycle(t *testing.T) {
 	requirePi(t)
 
 	cwd := t.TempDir()
-	sessionDir := PiSessionDir(cwd)
+	sessionDir := NewPi().SessionDir(cwd)
 	t.Logf("session dir: %s", sessionDir)
 
 	s := startPiTestSession(t, cwd)
@@ -221,7 +221,7 @@ fileFound:
 	time.Sleep(5 * time.Second)
 
 	// Read and verify session info
-	info, err := ReadPiSessionInfo(files[0])
+	info, err := NewPi().ParseSessionFile(files[0])
 	if err != nil {
 		t.Fatalf("read session info: %v", err)
 	}
@@ -233,7 +233,7 @@ fileFound:
 	if info.Cwd != cwd {
 		t.Errorf("expected cwd %q, got %q", cwd, info.Cwd)
 	}
-	if info.Title == "(no messages)" {
+	if info.Title == "(new)" {
 		t.Error("expected a title from first user message")
 	}
 	if info.MessageCount < 2 {
@@ -288,7 +288,7 @@ func TestPiReadRealSessionFiles(t *testing.T) {
 		files := ListSessionFiles(filepath.Join(sessRoot, d.Name()))
 		totalFiles += len(files)
 		for _, f := range files {
-			info, err := ReadPiSessionInfo(f)
+			info, err := NewPi().ParseSessionFile(f)
 			if err != nil {
 				t.Logf("  ERR %s: %v", filepath.Base(f), err)
 				continue

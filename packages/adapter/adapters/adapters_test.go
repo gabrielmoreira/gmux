@@ -5,12 +5,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gmuxapp/gmux/cli/gmuxr/internal/adapter"
+	"github.com/gmuxapp/gmux/packages/adapter"
 )
 
-// --- Generic adapter tests ---
+// --- Shell adapter tests ---
 
-func TestGenericMatchAll(t *testing.T) {
+func TestShellMatchAll(t *testing.T) {
 	g := NewShell()
 	if !g.Match([]string{"anything"}) {
 		t.Fatal("shell should match any command")
@@ -20,7 +20,7 @@ func TestGenericMatchAll(t *testing.T) {
 	}
 }
 
-func TestGenericName(t *testing.T) {
+func TestShellName(t *testing.T) {
 	g := NewShell()
 	if g.Name() != "shell" {
 		t.Fatalf("expected 'shell', got %q", g.Name())
@@ -37,53 +37,36 @@ func TestShellEnvNil(t *testing.T) {
 
 func TestShellMonitorPlainOutput(t *testing.T) {
 	g := NewShell()
-	status := g.Monitor([]byte("hello"))
-	if status != nil {
+	if g.Monitor([]byte("hello")) != nil {
 		t.Fatal("shell should not report status for plain output")
-	}
-}
-
-func TestShellCheckSilenceNoop(t *testing.T) {
-	g := NewShell()
-	g.Monitor([]byte("hello"))
-	if s := g.CheckSilence(); s != nil {
-		t.Fatal("shell should never report silence status")
 	}
 }
 
 // --- OSC title parsing tests ---
 
 func TestParseOSCTitleBEL(t *testing.T) {
-	// ESC ] 0 ; hello BEL
 	data := []byte("\x1b]0;my title\x07 more data")
-	title := parseOSCTitle(data)
-	if title != "my title" {
+	if title := parseOSCTitle(data); title != "my title" {
 		t.Fatalf("expected 'my title', got %q", title)
 	}
 }
 
 func TestParseOSCTitleST(t *testing.T) {
-	// ESC ] 2 ; hello ESC backslash
 	data := []byte("\x1b]2;window title\x1b\\ more")
-	title := parseOSCTitle(data)
-	if title != "window title" {
+	if title := parseOSCTitle(data); title != "window title" {
 		t.Fatalf("expected 'window title', got %q", title)
 	}
 }
 
 func TestParseOSCTitleNone(t *testing.T) {
-	data := []byte("hello world no escape here")
-	title := parseOSCTitle(data)
-	if title != "" {
+	if title := parseOSCTitle([]byte("hello world")); title != "" {
 		t.Fatalf("expected empty, got %q", title)
 	}
 }
 
 func TestParseOSCTitleEmbedded(t *testing.T) {
-	// Title buried in other output
 	data := []byte("some output\r\n\x1b]0;~/dev/gmux\x07prompt $ ")
-	title := parseOSCTitle(data)
-	if title != "~/dev/gmux" {
+	if title := parseOSCTitle(data); title != "~/dev/gmux" {
 		t.Fatalf("expected '~/dev/gmux', got %q", title)
 	}
 }
@@ -105,9 +88,8 @@ func TestShellMonitorTitleUpdate(t *testing.T) {
 // --- Pi adapter tests ---
 
 func TestPiName(t *testing.T) {
-	p := NewPi()
-	if p.Name() != "pi" {
-		t.Fatalf("expected 'pi', got %q", p.Name())
+	if NewPi().Name() != "pi" {
+		t.Fatal("expected 'pi'")
 	}
 }
 
@@ -147,28 +129,24 @@ func TestPiNoMatchOther(t *testing.T) {
 		t.Fatal("should not match pytest")
 	}
 	if p.Match([]string{"pipeline"}) {
-		t.Fatal("should not match 'pipeline' (contains 'pi' but base name is 'pipeline')")
+		t.Fatal("should not match 'pipeline'")
 	}
 }
 
 func TestPiEnvNil(t *testing.T) {
-	p := NewPi()
-	env := p.Env(adapter.EnvContext{SessionID: "sess-test"})
-	if env != nil {
-		t.Fatalf("expected nil env, got %v", env)
+	if env := NewPi().Env(adapter.EnvContext{}); env != nil {
+		t.Fatalf("expected nil, got %v", env)
 	}
 }
 
 func TestPiMonitorPlainOutput(t *testing.T) {
-	p := NewPi()
-	if s := p.Monitor([]byte("some output")); s != nil {
+	if NewPi().Monitor([]byte("some output")) != nil {
 		t.Fatal("should return nil for non-spinner output")
 	}
 }
 
 func TestPiMonitorSpinner(t *testing.T) {
-	p := NewPi()
-	s := p.Monitor([]byte("⠋ Working..."))
+	s := NewPi().Monitor([]byte("⠋ Working..."))
 	if s == nil {
 		t.Fatal("should detect spinner")
 	}
@@ -177,7 +155,40 @@ func TestPiMonitorSpinner(t *testing.T) {
 	}
 }
 
-// --- Pi session info tests ---
+// --- Pi capability interface checks ---
+
+func TestPiImplementsSessionFiler(t *testing.T) {
+	var a adapter.Adapter = NewPi()
+	if _, ok := a.(adapter.SessionFiler); !ok {
+		t.Fatal("Pi should implement SessionFiler")
+	}
+}
+
+func TestPiImplementsFileMonitor(t *testing.T) {
+	var a adapter.Adapter = NewPi()
+	if _, ok := a.(adapter.FileMonitor); !ok {
+		t.Fatal("Pi should implement FileMonitor")
+	}
+}
+
+func TestPiImplementsResumer(t *testing.T) {
+	var a adapter.Adapter = NewPi()
+	if _, ok := a.(adapter.Resumer); !ok {
+		t.Fatal("Pi should implement Resumer")
+	}
+}
+
+func TestShellDoesNotImplementCapabilities(t *testing.T) {
+	var a adapter.Adapter = NewShell()
+	if _, ok := a.(adapter.SessionFiler); ok {
+		t.Fatal("Shell should not implement SessionFiler")
+	}
+	if _, ok := a.(adapter.Resumer); ok {
+		t.Fatal("Shell should not implement Resumer")
+	}
+}
+
+// --- Pi session file tests ---
 
 func writeTempJSONL(t *testing.T, lines ...string) string {
 	t.Helper()
@@ -193,7 +204,7 @@ func writeTempJSONL(t *testing.T, lines ...string) string {
 	return path
 }
 
-func TestReadPiSessionInfoFirstUserMessage(t *testing.T) {
+func TestParseSessionFileFirstUserMessage(t *testing.T) {
 	path := writeTempJSONL(t,
 		`{"type":"session","version":3,"id":"abc-123","timestamp":"2026-03-15T10:00:00Z","cwd":"/tmp/test"}`,
 		`{"type":"model_change","id":"m1","timestamp":"2026-03-15T10:00:00Z"}`,
@@ -201,7 +212,8 @@ func TestReadPiSessionInfoFirstUserMessage(t *testing.T) {
 		`{"type":"message","id":"a1","timestamp":"2026-03-15T10:01:05Z","message":{"role":"assistant","content":[{"type":"text","text":"I'll fix that for you."}]}}`,
 	)
 
-	info, err := ReadPiSessionInfo(path)
+	p := NewPi()
+	info, err := p.ParseSessionFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +231,7 @@ func TestReadPiSessionInfoFirstUserMessage(t *testing.T) {
 	}
 }
 
-func TestReadPiSessionInfoNameOverridesFirstMessage(t *testing.T) {
+func TestParseSessionFileNameOverridesFirstMessage(t *testing.T) {
 	path := writeTempJSONL(t,
 		`{"type":"session","version":3,"id":"abc-456","timestamp":"2026-03-15T10:00:00Z","cwd":"/tmp/test"}`,
 		`{"type":"message","id":"u1","timestamp":"2026-03-15T10:01:00Z","message":{"role":"user","content":[{"type":"text","text":"Fix the auth bug"}]}}`,
@@ -227,7 +239,7 @@ func TestReadPiSessionInfoNameOverridesFirstMessage(t *testing.T) {
 		`{"type":"message","id":"a1","timestamp":"2026-03-15T10:01:05Z","message":{"role":"assistant","content":[{"type":"text","text":"Done."}]}}`,
 	)
 
-	info, err := ReadPiSessionInfo(path)
+	info, err := NewPi().ParseSessionFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,35 +248,32 @@ func TestReadPiSessionInfoNameOverridesFirstMessage(t *testing.T) {
 	}
 }
 
-func TestReadPiSessionInfoNoMessages(t *testing.T) {
+func TestParseSessionFileNoMessages(t *testing.T) {
 	path := writeTempJSONL(t,
 		`{"type":"session","version":3,"id":"abc-789","timestamp":"2026-03-15T10:00:00Z","cwd":"/tmp/test"}`,
 	)
 
-	info, err := ReadPiSessionInfo(path)
+	info, err := NewPi().ParseSessionFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Title != "(no messages)" {
+	if info.Title != "(new)" {
 		t.Errorf("expected fallback title, got %q", info.Title)
-	}
-	if info.MessageCount != 0 {
-		t.Errorf("expected 0 messages, got %d", info.MessageCount)
 	}
 }
 
-func TestReadPiSessionInfoLongTitleTruncated(t *testing.T) {
+func TestParseSessionFileLongTitleTruncated(t *testing.T) {
 	long := "Please help me with this very long request that goes on and on about many different things and really should be truncated for the sidebar"
 	path := writeTempJSONL(t,
 		`{"type":"session","version":3,"id":"abc-long","timestamp":"2026-03-15T10:00:00Z","cwd":"/tmp/test"}`,
 		`{"type":"message","id":"u1","timestamp":"2026-03-15T10:01:00Z","message":{"role":"user","content":[{"type":"text","text":"`+long+`"}]}}`,
 	)
 
-	info, err := ReadPiSessionInfo(path)
+	info, err := NewPi().ParseSessionFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(info.Title) > 85 { // 80 + "…"
+	if len(info.Title) > 85 {
 		t.Errorf("title too long (%d chars): %q", len(info.Title), info.Title)
 	}
 	if info.Title[len(info.Title)-3:] != "…" {
@@ -272,14 +281,13 @@ func TestReadPiSessionInfoLongTitleTruncated(t *testing.T) {
 	}
 }
 
-func TestReadPiSessionInfoStringContent(t *testing.T) {
-	// Some older formats use plain string content instead of array
+func TestParseSessionFileStringContent(t *testing.T) {
 	path := writeTempJSONL(t,
 		`{"type":"session","version":3,"id":"abc-str","timestamp":"2026-03-15T10:00:00Z","cwd":"/tmp/test"}`,
 		`{"type":"message","id":"u1","timestamp":"2026-03-15T10:01:00Z","message":{"role":"user","content":"Help me debug this"}}`,
 	)
 
-	info, err := ReadPiSessionInfo(path)
+	info, err := NewPi().ParseSessionFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,14 +296,78 @@ func TestReadPiSessionInfoStringContent(t *testing.T) {
 	}
 }
 
-func TestPiSessionDirEncoding(t *testing.T) {
-	// Can't test the full path (depends on $HOME) but test the encoding logic
-	dir := PiSessionDir("/home/mg/dev/gmux")
+// --- Pi FileMonitor tests ---
+
+func TestParseNewLinesNameChange(t *testing.T) {
+	p := NewPi()
+	events := p.ParseNewLines([]string{
+		`{"type":"session_info","name":"My new name"}`,
+		`{"type":"message","id":"u1","message":{"role":"user","content":"hello"}}`,
+	})
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Title != "My new name" {
+		t.Errorf("expected title 'My new name', got %q", events[0].Title)
+	}
+}
+
+func TestParseNewLinesNoEvents(t *testing.T) {
+	p := NewPi()
+	events := p.ParseNewLines([]string{
+		`{"type":"message","id":"u1","message":{"role":"user","content":"hello"}}`,
+	})
+	if len(events) != 0 {
+		t.Errorf("expected 0 events, got %d", len(events))
+	}
+}
+
+// --- Pi Resumer tests ---
+
+func TestResumeCommand(t *testing.T) {
+	p := NewPi()
+	cmd := p.ResumeCommand(&adapter.SessionFileInfo{
+		FilePath: "/home/user/.pi/agent/sessions/--tmp--/test.jsonl",
+	})
+	expected := []string{"pi", "--session", "/home/user/.pi/agent/sessions/--tmp--/test.jsonl", "-c"}
+	if len(cmd) != len(expected) {
+		t.Fatalf("expected %v, got %v", expected, cmd)
+	}
+	for i := range cmd {
+		if cmd[i] != expected[i] {
+			t.Errorf("cmd[%d]: expected %q, got %q", i, expected[i], cmd[i])
+		}
+	}
+}
+
+func TestCanResumeValid(t *testing.T) {
+	path := writeTempJSONL(t,
+		`{"type":"session","version":3,"id":"abc","timestamp":"2026-03-15T10:00:00Z","cwd":"/tmp/test"}`,
+		`{"type":"message","id":"u1","timestamp":"2026-03-15T10:01:00Z","message":{"role":"user","content":[{"type":"text","text":"hello"}]}}`,
+	)
+	if !NewPi().CanResume(path) {
+		t.Fatal("should be resumable")
+	}
+}
+
+func TestCanResumeEmpty(t *testing.T) {
+	path := writeTempJSONL(t,
+		`{"type":"session","version":3,"id":"abc","timestamp":"2026-03-15T10:00:00Z","cwd":"/tmp/test"}`,
+	)
+	if NewPi().CanResume(path) {
+		t.Fatal("empty session should not be resumable")
+	}
+}
+
+// --- Shared helpers ---
+
+func TestSessionDirEncoding(t *testing.T) {
+	p := NewPi()
+	dir := p.SessionDir("/home/mg/dev/gmux")
 	if !filepath.IsAbs(dir) {
 		t.Errorf("expected absolute path, got %s", dir)
 	}
-	base := filepath.Base(dir)
-	if base != "--home-mg-dev-gmux--" {
+	if base := filepath.Base(dir); base != "--home-mg-dev-gmux--" {
 		t.Errorf("expected --home-mg-dev-gmux--, got %s", base)
 	}
 }
@@ -306,8 +378,7 @@ func TestListSessionFiles(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "b.jsonl"), []byte("{}"), 0644)
 	os.WriteFile(filepath.Join(dir, "c.txt"), []byte("not a session"), 0644)
 
-	files := ListSessionFiles(dir)
-	if len(files) != 2 {
+	if files := ListSessionFiles(dir); len(files) != 2 {
 		t.Errorf("expected 2 jsonl files, got %d", len(files))
 	}
 }

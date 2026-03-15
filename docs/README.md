@@ -18,6 +18,7 @@
 | 0007 | Session lifecycle and close semantics | Proposed |
 | 0008 | Pi adapter resume and session correlation | Exploring |
 | 0009 | Session file attribution via content similarity | Proposed |
+| 0010 | Adapter interface v2 — shared package, opt-in capabilities | Proposed |
 
 ## Protocol
 

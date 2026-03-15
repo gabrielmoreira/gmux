@@ -1,0 +1,52 @@
+package adapter
+
+import "time"
+
+// SessionFileInfo holds metadata extracted from a tool's session file.
+type SessionFileInfo struct {
+	ID           string    // Tool's session identifier (becomes resume_key)
+	Title        string    // Display title for sidebar
+	Cwd          string    // Working directory
+	Created      time.Time // When the session was created
+	MessageCount int       // Number of messages/interactions
+	FilePath     string    // Absolute path to the file
+}
+
+// FileEvent represents a meaningful change extracted from new file content.
+type FileEvent struct {
+	Title  string  // If non-empty, update session title
+	Status *Status // If non-nil, update session status
+}
+
+// SessionFiler is implemented by adapters whose tools write session
+// files to disk (pi, claude-code, etc). Used by gmuxd for resumable
+// session discovery and session file attribution.
+type SessionFiler interface {
+	// SessionDir returns the directory where this tool stores session
+	// files for the given cwd. Returns "" if not applicable.
+	SessionDir(cwd string) string
+
+	// ParseSessionFile reads a session file and returns display metadata.
+	// Called by gmuxd for resumable discovery and live file monitoring.
+	ParseSessionFile(path string) (*SessionFileInfo, error)
+}
+
+// FileMonitor is implemented by adapters that want to react to changes
+// in their attributed session file. gmuxd calls ParseNewLines when
+// inotify fires on an attributed file.
+type FileMonitor interface {
+	// ParseNewLines receives lines appended since the last read.
+	// Returns events that should update the session's state.
+	ParseNewLines(lines []string) []FileEvent
+}
+
+// Resumer is implemented by adapters whose sessions can be resumed
+// after the process exits.
+type Resumer interface {
+	// ResumeCommand returns the command to resume the given session.
+	ResumeCommand(info *SessionFileInfo) []string
+
+	// CanResume returns whether a session file represents a resumable
+	// session (vs a corrupted/empty/incompatible one).
+	CanResume(path string) bool
+}

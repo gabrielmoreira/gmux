@@ -1,6 +1,6 @@
-// Package adapter defines the interface for teaching gmux-run how to
-// launch and monitor specific tools. Adapters are matched by command
-// and produce Status events for the sidebar.
+// Package adapter defines the interface for teaching gmux how to work
+// with specific tools. Adapters are matched by command and produce
+// Status events for the sidebar. Both gmuxr and gmuxd import this package.
 package adapter
 
 import "path/filepath"
@@ -13,7 +13,8 @@ type Status struct {
 	Title string `json:"title,omitempty"` // If set, updates the session title
 }
 
-// Adapter teaches gmux-run how to work with a specific child process.
+// Adapter teaches gmux how to work with a specific child process.
+// This is the base interface — all adapters must implement it.
 type Adapter interface {
 	// Name returns the adapter identifier (e.g. "pi", "shell").
 	Name() string

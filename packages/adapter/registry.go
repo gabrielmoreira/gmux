@@ -26,6 +26,16 @@ func (r *Registry) SetFallback(a Adapter) {
 	r.fallback = a
 }
 
+// All returns all registered adapters (excluding the fallback).
+func (r *Registry) All() []Adapter {
+	return r.adapters
+}
+
+// Fallback returns the fallback adapter.
+func (r *Registry) Fallback() Adapter {
+	return r.fallback
+}
+
 // Resolve picks the adapter for the given command.
 //
 // Priority:
@@ -55,6 +65,5 @@ func (r *Registry) Resolve(command []string) Adapter {
 		return r.fallback
 	}
 
-	// Should never happen if registry is properly initialized
 	return nil
 }

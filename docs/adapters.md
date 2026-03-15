@@ -6,24 +6,36 @@ launch, and monitors PTY output to report status to the sidebar.
 
 ## Where adapters live
 
-Adapter logic is split across two components based on what each needs
-to see:
+Adapter definitions live in a **shared package** (`packages/adapter`)
+imported by both gmuxr and gmuxd. Each adapter is a single struct that
+implements the base interface plus any capability interfaces it supports.
 
-| Concern | Component | Why |
-|---------|-----------|-----|
-| Command matching | **gmuxr** | Runs once at launch, needs the command |
-| Launch preparation | **gmuxr** | Modifies command/env before exec |
-| PTY output monitoring | **gmuxr** | Sees raw terminal output in real-time |
-| Launcher registration | **gmuxr** | Declares how to start new sessions |
-| Session file attribution | **gmuxd** | Needs global view of all sessions |
-| Resumable session discovery | **gmuxd** | Scans disk, not tied to a running process |
-| Session directory watching | **gmuxd** | One watcher per cwd, shared across sessions |
+The two components use different parts of the same adapter:
 
-The split exists because gmuxr is per-session (sees one process) while
-gmuxd is per-machine (sees everything). Attribution and resumability
-require the global view.
+| Concern | Component | Interface |
+|---------|-----------|-----------|
+| Command matching | **gmuxr** | `Adapter.Match()` |
+| Environment injection | **gmuxr** | `Adapter.Env()` |
+| PTY output monitoring | **gmuxr** | `Adapter.Monitor()` |
+| Launcher registration | **both** | `Launcher` struct via `init()` |
+| Session file discovery | **gmuxd** | `SessionFiler.SessionDir()` |
+| Session file parsing | **gmuxd** | `SessionFiler.ParseSessionFile()` |
+| Live file monitoring | **gmuxd** | `FileMonitor.ParseNewLines()` |
+| Resume command | **gmuxd** | `Resumer.ResumeCommand()` |
+| Session file attribution | **gmuxd** | `SessionFiler` + content similarity |
+| Resumable discovery | **gmuxd** | `SessionFiler` + `Resumer` |
 
-## The Adapter interface (gmuxr)
+The split exists because gmuxr is per-session (sees one process's PTY)
+while gmuxd is per-machine (sees all files, all sessions). File-level
+concerns require the global view.
+
+## Interfaces
+
+Adapters are defined through a base interface plus opt-in capability
+interfaces. The base is required; capabilities are checked via type
+assertion (`if sf, ok := a.(SessionFiler); ok { ... }`).
+
+### Base interface (required, all adapters)
 
 ```go
 type Adapter interface {
@@ -34,24 +46,13 @@ type Adapter interface {
 }
 ```
 
-### Name
-
-Returns the adapter identifier: `"shell"`, `"pi"`, etc. Used in session
+**Name** — adapter identifier: `"shell"`, `"pi"`, etc. Used in session
 metadata (`kind` field) and for `GMUX_ADAPTER` env override matching.
 
-### Match
-
-Called once at launch. Receives the full command array. Returns true if
-this adapter handles the command. Adapters are tried in registration
-order; first match wins.
-
-Matching should be cheap — no shelling out, no file I/O. Match on binary
-base name and argument patterns:
+**Match** — called once at launch. Receives the full command array.
+Should be cheap — match on binary base name and argument patterns:
 
 ```go
-// Pi matches "pi" or "pi-coding-agent" anywhere in the command,
-// stopping at "--". This handles direct invocation, npx wrappers,
-// nix run, env wrappers, and full paths.
 func (p *Pi) Match(cmd []string) bool {
     for _, arg := range cmd {
         base := filepath.Base(arg)
@@ -67,36 +68,83 @@ func (p *Pi) Match(cmd []string) bool {
 The cost of a false negative is low — the shell adapter catches
 everything, and `GMUX_ADAPTER=pi` overrides matching entirely.
 
-### Env
-
-Returns adapter-specific environment variables for the child process.
-The runner automatically sets `GMUX`, `GMUX_SOCKET`, `GMUX_SESSION_ID`,
-`GMUX_ADAPTER`, and `GMUX_VERSION` — `Env()` adds anything beyond that.
-
-Most adapters return nil:
-
-```go
-func (p *Pi) Env(ctx EnvContext) []string { return nil }
-```
+**Env** — returns adapter-specific environment variables. The runner
+automatically sets `GMUX`, `GMUX_SOCKET`, `GMUX_SESSION_ID`,
+`GMUX_ADAPTER`, and `GMUX_VERSION`. Most adapters return nil.
 
 **The command is never modified by adapters.** What the user (or
-launcher) specified is exactly what runs. This ensures:
-- Session metadata matches the actual command
-- Resumability doesn't need to distinguish "original" vs "prepared"
-- No surprising flag injection or wrapper rewriting
-- The adapter's Match() output stays consistent with what runs
+launcher) specified is exactly what runs. This ensures session metadata
+matches reality, resume doesn't need original-vs-prepared disambiguation,
+and there's no surprising flag injection.
 
-If a tool needs special flags, that belongs in the launcher's `Command`
-definition or in the user's shell alias — not in adapter mutation.
+**Monitor** — called on **every PTY read** with raw bytes. Must be very
+cheap. Returns nil when there's nothing to report. When it returns a
+`Status`, the runner propagates it via SSE to the sidebar.
 
-### Monitor
+### SessionFiler — session file discovery and parsing
 
-Called on **every PTY read** with raw bytes. Must be very cheap — no
-allocations, no regex compilation per call. Returns nil when there's
-nothing to report.
+```go
+type SessionFiler interface {
+    SessionDir(cwd string) string
+    ParseSessionFile(path string) (*SessionFileInfo, error)
+}
+```
 
-When it returns a `Status`, the runner propagates it to the session
-state, which flows through SSE to the sidebar.
+Implemented by adapters whose tools write session files to disk. Used
+by **gmuxd** for:
+- **Resumable discovery** — scan `SessionDir()`, parse each file
+- **Attribution** — after matching a file to a session, extract resume_key
+- **Title extraction** — first user message or explicit name
+
+**SessionDir** returns where the tool stores files for a given cwd.
+Pi: `~/.pi/agent/sessions/--<encoded-cwd>--/`.
+
+**ParseSessionFile** reads a file and returns display metadata:
+ID (becomes resume_key), title, cwd, created time, message count.
+
+### FileMonitor — live file event extraction
+
+```go
+type FileMonitor interface {
+    ParseNewLines(lines []string) []FileEvent
+}
+```
+
+Implemented by adapters that want to react to changes in their
+attributed session file. Called by **gmuxd** when inotify fires on an
+attributed file.
+
+For pi: parses new JSONL lines, looks for `session_info` entries
+(name changes via `/name` command), message count updates, etc.
+
+### Resumer — session resume support
+
+```go
+type Resumer interface {
+    ResumeCommand(info *SessionFileInfo) []string
+    CanResume(path string) bool
+}
+```
+
+Implemented by adapters whose sessions can be resumed after exit. Used
+by **gmuxd** to:
+- Filter which files are actually resumable (valid, non-empty)
+- Generate the command for the UI's resume action
+
+For pi: `ResumeCommand` returns `["pi", "--session", path, "-c"]`.
+`CanResume` checks for valid header + at least one message.
+
+### Capability composition
+
+| Adapter | Base | SessionFiler | FileMonitor | Resumer |
+|---------|------|-------------|-------------|---------|
+| Shell | ✓ | — | — | — |
+| Pi | ✓ | ✓ | ✓ | ✓ |
+| (future opencode) | ✓ | ✓ | — | ✓ |
+| (future pytest) | ✓ | — | — | — |
+
+Shell is the simplest — just OSC title parsing. Pi is the richest.
+New adapters implement only what they support.
 
 ## Status
 
@@ -142,37 +190,37 @@ When gmuxr launches a command:
 
 ### Shell (fallback)
 
+- **Capabilities**: `Adapter` only
 - **Matches**: everything (catch-all)
 - **Monitor**: parses OSC 0/2 title sequences for live sidebar titles
 - **Status**: none — shells don't report activity states
-- **Launcher**: always added by gmuxd as the default "new session" option.
-  Not in the `Launchers` slice (it's not an opt-in adapter)
+- **Launcher**: always added by gmuxd as default; not in `Launchers` slice
 
 ### Pi (coding agent)
 
+- **Capabilities**: `Adapter` + `SessionFiler` + `FileMonitor` + `Resumer`
 - **Matches**: `pi` or `pi-coding-agent` as base name in any arg position
 - **Monitor**: detects braille spinner + "Working..." → `active` status
-- **Status**: `{label: "working", state: "active"}` during agent turns
 - **Launcher**: `{id: "pi", label: "pi", command: ["pi"]}`
-- **Session files**: `~/.pi/agent/sessions/--<cwd-encoded>--/*.jsonl`
-- **Resume**: via `pi --session <path> -c` (handled by gmuxd, see below)
+- **SessionDir**: `~/.pi/agent/sessions/--<cwd-encoded>--/`
+- **ParseSessionFile**: reads JSONL, extracts UUID, title
+  (session_info.name > first user message > "(new)"), message count
+- **ParseNewLines**: watches for `session_info` name changes → title update
+- **ResumeCommand**: `["pi", "--session", "<path>", "-c"]`
+- **CanResume**: valid header + at least one message
 
 ## Adding an adapter
 
-One file per adapter in `cli/gmuxr/internal/adapter/adapters/`. The file
-registers itself via `init()`:
+One file per adapter in `packages/adapter/adapters/`. The file registers
+itself via `init()`:
 
 ```go
 package adapters
 
 func init() {
-    // Register launcher (appears in UI "new session" menu)
     Launchers = append(Launchers, Launcher{
-        ID:      "myapp",
-        Label:   "MyApp",
-        Command: []string{"myapp"},
+        ID: "myapp", Label: "MyApp", Command: []string{"myapp"},
     })
-    // Register adapter instance (used for matching)
     All = append(All, NewMyApp())
 }
 
@@ -185,56 +233,84 @@ func (m *MyApp) Env(ctx adapter.EnvContext) []string { return nil }
 func (m *MyApp) Monitor(output []byte) *adapter.Status { /* ... */ }
 ```
 
-No other files need to be touched. The registry iterates `All` at
-startup; `Launchers` is queried via `gmuxr adapters` subcommand.
+To add session file support, implement `SessionFiler` on the same struct:
+
+```go
+func (m *MyApp) SessionDir(cwd string) string {
+    return filepath.Join(os.UserHomeDir(), ".myapp/sessions", encode(cwd))
+}
+
+func (m *MyApp) ParseSessionFile(path string) (*adapter.SessionFileInfo, error) {
+    // Read file, extract title/ID/metadata
+}
+```
+
+To add live file monitoring, implement `FileMonitor`:
+
+```go
+func (m *MyApp) ParseNewLines(lines []string) []adapter.FileEvent {
+    // Parse new lines, return title/status changes
+}
+```
+
+To add resume support, implement `Resumer`:
+
+```go
+func (m *MyApp) ResumeCommand(info *adapter.SessionFileInfo) []string {
+    return []string{"myapp", "resume", info.ID}
+}
+
+func (m *MyApp) CanResume(path string) bool {
+    // Check if file represents a valid resumable session
+}
+```
+
+No other files need to be touched. Components discover capabilities
+via type assertion at runtime.
 
 ## gmuxd responsibilities
 
+gmuxd uses the adapter's capability interfaces to provide file-level
+intelligence. It imports the same shared adapter package as gmuxr.
+
 ### Launcher discovery
 
-At startup, gmuxd runs `gmuxr adapters` which outputs the `Launchers`
-slice as JSON. gmuxd prepends shell as the default and serves the full
-list via `GET /v1/config`. The UI's "new session" menu is built from
-this.
+At startup, gmuxd queries `Launchers` from the adapter registry.
+Prepends shell as the default and serves via `GET /v1/config`.
 
 ### Session file attribution (ADR-0009)
 
-gmuxd watches session directories with inotify (one watcher per unique
-cwd that has live sessions). When a file is written:
+For each unique cwd with live sessions, gmuxd checks if any adapter
+implements `SessionFiler`. If so, it watches `SessionDir(cwd)` with
+inotify. When a file is written:
 
-1. **Single session in cwd** → trivially attribute the file to that session
-2. **Multiple sessions** → content similarity match: extract text from the
-   file, compare against each session's scrollback tail, best match wins
+1. **Single session in cwd** → trivially attribute
+2. **Multiple sessions** → content similarity match (ADR-0009)
 
-Attribution sets the session's `resume_key` — the unique identifier from
-the application's session file (e.g., pi's session UUID). This key
-is used for deduplication with resumable entries.
+Attribution sets `resume_key` on the session. Sticky — only re-checks
+when a different file starts receiving writes.
 
-Attribution is **sticky** — once set, it holds until a different file
-starts receiving writes (e.g., after `/resume` or `/fork` in pi).
-Re-attribution happens naturally on the next write, no command detection
-needed.
+### Live file monitoring
 
-See [ADR-0009](adr/0009-session-file-attribution.md) for the full design.
+After attribution, gmuxd keeps watching the file. On new writes:
+
+1. Read new lines (tracked offset per file)
+2. If adapter implements `FileMonitor`, call `ParseNewLines(newLines)`
+3. Apply returned `FileEvent`s to the session store (title changes, etc.)
+
+This is how `/name` in pi updates the sidebar — gmuxd sees the new
+`session_info` JSONL line, the adapter's `ParseNewLines` extracts the
+title, gmuxd updates the store, SSE pushes it to the frontend.
 
 ### Resumable session discovery
 
-gmuxd periodically scans for sessions that can be resumed. For pi,
-this means listing `.jsonl` files in session directories and reading
-their headers for UUID, cwd, and timestamp.
+For each registered adapter implementing `SessionFiler` + `Resumer`:
 
-Resumable sessions are pushed through the same SSE stream as live
-sessions, with `alive: false` and `resumable: true`. The frontend
-deduplicates: if a live session's `resume_key` matches a resumable
-entry's key (same adapter), the resumable entry is hidden.
-
-### Reverse channel (gmuxd → gmuxr)
-
-After attribution, gmuxd can notify the runner which file is "theirs"
-(via a POST to the runner's socket). This enables the runner to do
-richer per-file monitoring — e.g., watching specific JSONL entries for
-conversation state. This is optional; attribution works entirely in
-gmuxd without it.
+1. List files in `SessionDir()` for known cwds
+2. Filter with `CanResume(path)`
+3. Parse with `ParseSessionFile(path)`
+4. Deduplicate against live sessions by `resume_key`
+5. Push as `session-upsert` with `resumable: true` via SSE
 
 ## Session states from the UI's perspective
 
@@ -276,19 +352,23 @@ Children can optionally call back to the runner:
 | `/status` | PUT | Set application status (highest priority) |
 | `/meta` | PATCH | Update title, subtitle |
 
-Priority: child self-report > adapter Monitor() > process defaults.
+Priority: child self-report > gmuxd FileMonitor > adapter Monitor() > process defaults.
 
 ## Testing
 
-Integration tests live alongside the adapter code with a `//go:build
-integration` tag:
+**Unit tests** run with each component's test suite — adapter matching,
+parsing, status extraction.
+
+**Integration tests** live alongside the adapter code with a
+`//go:build integration` tag:
 
 ```bash
-go test -tags integration -v -timeout 120s \
-  ./cli/gmuxr/internal/adapter/adapters/
+go test -tags integration -v -timeout 120s -run TestPi \
+  ./packages/adapter/adapters/
 ```
 
 These launch real processes through PTYs and verify adapter behavior.
 They require the target binaries to be installed (e.g., `pi`) and are
 skipped if not found. Tests document observable behavior patterns (output
-timing, file creation lifecycle) that the attribution logic depends on.
+timing, file creation lifecycle) that the attribution and monitoring
+logic depends on.

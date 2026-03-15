@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gmuxapp/gmux/cli/gmuxr/internal/adapter"
-	"github.com/gmuxapp/gmux/cli/gmuxr/internal/adapter/adapters"
+	"github.com/gmuxapp/gmux/packages/adapter"
+	"github.com/gmuxapp/gmux/packages/adapter/adapters"
 	"github.com/gmuxapp/gmux/cli/gmuxr/internal/localterm"
 	"github.com/gmuxapp/gmux/cli/gmuxr/internal/naming"
 	"github.com/gmuxapp/gmux/cli/gmuxr/internal/ptyserver"
@@ -66,7 +66,7 @@ func main() {
 	for _, a := range adapters.All {
 		registry.Register(a)
 	}
-	registry.SetFallback(adapters.Fallback())
+	registry.SetFallback(adapters.DefaultFallback())
 	a := registry.Resolve(args)
 
 	// Get adapter-specific env vars

@@ -1,6 +1,7 @@
 go 1.26
 
 use (
+	./packages/adapter
 	./services/gmuxd
 	./cli/gmuxr
 	./tests/e2e
