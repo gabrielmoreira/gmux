@@ -38,7 +38,7 @@ port = 9999
 [tailscale]
 enabled = true
 hostname = "mybox"
-allow = ["alice@github", "bobs-phone"]
+allow = ["alice@github", "bob@github"]
 `
 	os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(content), 0o644)
 

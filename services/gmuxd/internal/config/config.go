@@ -28,9 +28,8 @@ type TailscaleConfig struct {
 	// Default "gmux".
 	Hostname string `toml:"hostname"`
 
-	// Allow is the list of tailscale identities permitted to connect.
-	// Each entry is matched against the connecting peer's login name
-	// (e.g. "user@github") OR device name (e.g. "my-phone").
+	// Allow is the list of tailscale login names permitted to connect
+	// (e.g. "user@github"). Matched against the peer's UserProfile.LoginName.
 	// Empty list = no one can connect (fail-closed).
 	Allow []string `toml:"allow"`
 }

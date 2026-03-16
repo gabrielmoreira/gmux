@@ -26,7 +26,7 @@ import (
 // Config mirrors the tailscale section of the gmuxd config file.
 type Config struct {
 	Hostname string
-	Allow    []string // login names ("user@github") or device names ("my-phone")
+	Allow    []string // tailscale login names (e.g. "user@github")
 }
 
 // Listener manages a tsnet server and its HTTPS listener.
@@ -99,10 +99,9 @@ func (l *Listener) authMiddleware(next http.Handler) http.Handler {
 		}
 
 		loginName := who.UserProfile.LoginName
-		nodeName := who.Node.ComputedName
 
-		if !l.isAllowed(loginName, nodeName) {
-			log.Printf("tsauth: DENIED %s (login=%s device=%s)", r.RemoteAddr, loginName, nodeName)
+		if !l.isAllowed(loginName) {
+			log.Printf("tsauth: DENIED %s (login=%s device=%s)", r.RemoteAddr, loginName, who.Node.ComputedName)
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
@@ -111,16 +110,16 @@ func (l *Listener) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// isAllowed checks if the connecting peer matches any entry in the allow list.
-// Matches against login name (e.g. "user@github") or device name (e.g. "my-phone").
+// isAllowed checks if the connecting peer's login name matches any entry
+// in the allow list. Login names (e.g. "user@github") are stable identities
+// tied to the user's auth provider. Device names are not checked — use
+// tailscale ACLs for per-device control.
 // Comparison is case-insensitive.
-func (l *Listener) isAllowed(loginName, nodeName string) bool {
+func (l *Listener) isAllowed(loginName string) bool {
 	loginLower := strings.ToLower(loginName)
-	nodeLower := strings.ToLower(nodeName)
 
 	for _, entry := range l.cfg.Allow {
-		entryLower := strings.ToLower(entry)
-		if entryLower == loginLower || entryLower == nodeLower {
+		if strings.ToLower(entry) == loginLower {
 			return true
 		}
 	}

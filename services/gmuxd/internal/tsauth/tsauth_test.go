@@ -5,26 +5,25 @@ import "testing"
 func TestIsAllowed(t *testing.T) {
 	l := &Listener{
 		cfg: Config{
-			Allow: []string{"alice@github", "bobs-phone"},
+			Allow: []string{"alice@github", "bob@github"},
 		},
 	}
 
 	tests := []struct {
-		login, node string
-		want        bool
+		login string
+		want  bool
 	}{
-		{"alice@github", "alices-laptop", true},   // login match
-		{"bob@github", "bobs-phone", true},         // device match
-		{"eve@github", "eves-laptop", false},       // no match
-		{"Alice@GitHub", "whatever", true},          // case-insensitive login
-		{"whoever", "Bobs-Phone", true},             // case-insensitive device
-		{"", "", false},                              // empty
+		{"alice@github", true},    // exact match
+		{"bob@github", true},      // exact match
+		{"eve@github", false},     // no match
+		{"Alice@GitHub", true},    // case-insensitive
+		{"", false},               // empty
 	}
 
 	for _, tt := range tests {
-		got := l.isAllowed(tt.login, tt.node)
+		got := l.isAllowed(tt.login)
 		if got != tt.want {
-			t.Errorf("isAllowed(%q, %q) = %v, want %v", tt.login, tt.node, got, tt.want)
+			t.Errorf("isAllowed(%q) = %v, want %v", tt.login, got, tt.want)
 		}
 	}
 }
@@ -34,7 +33,7 @@ func TestIsAllowedEmptyList(t *testing.T) {
 		cfg: Config{Allow: nil},
 	}
 
-	if l.isAllowed("anyone@github", "any-device") {
+	if l.isAllowed("anyone@github") {
 		t.Error("empty allow list should deny everyone")
 	}
 }
