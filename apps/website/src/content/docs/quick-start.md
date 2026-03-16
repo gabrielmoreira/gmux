@@ -23,29 +23,9 @@ Open **[localhost:8790](http://localhost:8790)**. Sessions appear in the sidebar
 
 `gmuxr` auto-starts the daemon (`gmuxd`) on first run — there's nothing else to set up.
 
-## App mode
+## Next steps
 
-Run gmux as a standalone window instead of a browser tab:
-
-```bash
-google-chrome --app=http://localhost:8790
-# macOS:
-open -na "Google Chrome" --args --app=http://localhost:8790
-```
-
-You can also install it as a PWA from the browser menu (⋮ → Install gmux).
-
-App mode matters for keyboard shortcuts — browsers reserve `Ctrl+T`, `Ctrl+N`, `Ctrl+W` and others. In a tab, these control the browser. In app mode, they pass through to your terminal.
-
-## Mobile
-
-Open the same URL on your phone. The bottom bar provides `esc`, `tab`, `ctrl`, arrow keys, and `enter`.
-
-## Architecture
-
-```
-gmuxr (per session)  →  gmuxd (per machine)  →  browser
-  PTY + WebSocket         discovery + proxy        sidebar + terminal
-```
-
-See [Architecture](/architecture) for details, or [CONTRIBUTING.md](https://github.com/gmuxapp/gmux/blob/main/CONTRIBUTING.md) for the development setup.
+- [Using the UI](/using-the-ui) — what the dots mean, keyboard shortcuts, mobile, launching from the browser
+- [Remote Access](/remote-access) — access gmux from your phone or another machine
+- [Configuration](/configuration) — config file, environment variables, file paths
+- [Architecture](/architecture) — how the pieces fit together

@@ -55,6 +55,7 @@ See [Architecture](/architecture) for the full picture.
 
 ## Next steps
 
-- [Quick Start](/quick-start) — install and run
+- [Quick Start](/quick-start) — install and run in under a minute
+- [Using the UI](/using-the-ui) — what you see and how to work with it
 - [Architecture](/architecture) — how the pieces fit together
 - [Adapters](/adapters) — how gmux understands different tools

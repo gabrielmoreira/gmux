@@ -22,7 +22,9 @@ export default defineConfig({
           items: [
             { label: 'Introduction', slug: 'introduction' },
             { label: 'Quick Start', slug: 'quick-start' },
+            { label: 'Using the UI', slug: 'using-the-ui' },
             { label: 'Remote Access', slug: 'remote-access' },
+            { label: 'Configuration', slug: 'configuration' },
           ],
         },
         {
@@ -44,6 +46,13 @@ export default defineConfig({
           items: [
             { label: 'Adapter Architecture', slug: 'develop/adapter-architecture' },
             { label: 'Writing an Adapter', slug: 'develop/writing-adapters' },
+          ],
+        },
+        {
+          label: 'Planned',
+          items: [
+            { label: 'Session Persistence', slug: 'planned/session-persistence' },
+            { label: 'Probes', slug: 'planned/probes' },
           ],
         },
       ],

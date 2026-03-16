@@ -1,0 +1,129 @@
+---
+title: Using the UI
+description: What you see in gmux and how to work with it.
+---
+
+Open **[localhost:8790](http://localhost:8790)** after launching your first session. This page explains what you're looking at.
+
+## The sidebar
+
+The left panel lists all sessions, grouped by working directory. Each folder shows the project path, and sessions within it are sorted by creation time.
+
+### Session indicators
+
+Each session has a colored dot on the left:
+
+| Dot | Meaning |
+|-----|---------|
+| **Pulsing cyan** | The tool is actively working (building, thinking, running tests) |
+| **Amber** | Something happened that you haven't seen yet (new output while viewing another session) |
+| **No dot** | Idle or waiting for input |
+
+The working/idle detection comes from [adapters](/adapters). Without a specific adapter, gmux only knows whether the process is alive.
+
+### Session states
+
+| Visual | State | What you can do |
+|--------|-------|-----------------|
+| Normal text | Running | Click to attach, use the terminal |
+| Dimmed text | Exited (not resumable) | Dismiss with × |
+| Normal text, not alive | Resumable | Click to resume (e.g. pi sessions) |
+
+### Close buttons
+
+Hover over a session to reveal the close button:
+
+- **×** (dismiss) — kills the process and removes it from the sidebar
+- **−** (minimize) — kills the process but keeps it as a resumable entry (for tools like pi that can resume from their session files)
+
+Which button appears depends on the adapter. Plain shell sessions get ×, pi sessions get −.
+
+## The terminal
+
+Click a session to attach. You get a full interactive terminal powered by [xterm.js](https://xtermjs.org/) — colors, cursor positioning, mouse support, and images all work.
+
+### Header bar
+
+Above the terminal, the header shows:
+
+- **Session title** — extracted from the tool (pi's first message, shell's window title)
+- **Status label** — adapter-reported state like "working" or "completed"
+- **Working indicator** — pulsing cyan dot when the tool is busy
+
+## Launching sessions
+
+There are two ways to start a new session:
+
+### From the command line
+
+```bash
+gmuxr pi                    # coding agent
+gmuxr -- pytest --watch     # any command
+gmuxr -- make build
+```
+
+The session appears in the sidebar immediately.
+
+### From the UI
+
+Click the **+** button on a folder header to launch a new session in that directory. A dropdown shows the available launchers (e.g. "Pi", "Shell"). The default launcher runs on click; others appear in the dropdown.
+
+The empty state (when no session is selected) also shows launch buttons.
+
+## Keyboard shortcuts
+
+Most keys pass straight through to the terminal. A few are intercepted:
+
+| Shortcut | Action |
+|----------|--------|
+| **Ctrl+C** | If text is selected: copy to clipboard. Otherwise: sends SIGINT to the process (normal Ctrl+C) |
+| **Ctrl+V** | Paste from clipboard |
+| **Ctrl+Alt+T** | Sends Ctrl+T to the terminal (browsers steal Ctrl+T for new tab) |
+| **Shift+Enter** | Sends a plain newline (some terminals treat Shift+Enter differently) |
+
+:::tip[App mode]
+Browsers reserve many shortcuts (Ctrl+T, Ctrl+N, Ctrl+W, etc.) that don't reach the terminal. Run gmux as a standalone app to get full keyboard pass-through:
+
+```bash
+google-chrome --app=http://localhost:8790
+```
+
+Or install it as a PWA from the browser menu (⋮ → Install gmux).
+:::
+
+## Mobile
+
+Open the same URL on your phone (or via [remote access](/remote-access) on another device). The UI adapts to small screens:
+
+- The sidebar slides in from the left — tap the menu button (☰) to show it
+- A bottom bar provides essential keys that phones don't have:
+
+| Button | Sends |
+|--------|-------|
+| **esc** | Escape |
+| **tab** | Tab |
+| **ctrl** | Arms Ctrl for the next key you type (tap ctrl, then tap c = Ctrl+C) |
+| **↑ ↓** | Arrow keys |
+| **↵** | Enter |
+
+The ctrl button highlights when armed and disarms after the next keypress or after a timeout.
+
+## Self-reporting status
+
+Any process can update its own sidebar entry without a custom adapter. gmuxr sets `$GMUX_SOCKET` in the child's environment:
+
+```bash
+# Show "building" with a working dot
+curl -X PUT --unix-socket "$GMUX_SOCKET" \
+  http://localhost/status \
+  -H 'Content-Type: application/json' \
+  -d '{"label": "building", "working": true}'
+
+# Clear status
+curl -X PUT --unix-socket "$GMUX_SOCKET" \
+  http://localhost/status \
+  -H 'Content-Type: application/json' \
+  -d '{"label": "", "working": false}'
+```
+
+See [Adapter Architecture](/develop/adapter-architecture) for the full child protocol.
