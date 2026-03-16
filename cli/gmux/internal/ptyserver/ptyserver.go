@@ -212,7 +212,6 @@ func (s *Server) serve() {
 	mux.HandleFunc("GET /meta", s.handleMeta)
 	mux.HandleFunc("GET /scrollback/text", s.handleScrollbackText)
 	mux.HandleFunc("PUT /status", s.handlePutStatus)
-	mux.HandleFunc("PATCH /meta", s.handlePatchMeta)
 	mux.HandleFunc("GET /events", s.handleEvents)
 	mux.HandleFunc("POST /kill", s.handleKill)
 
@@ -224,7 +223,7 @@ func (s *Server) serve() {
 }
 
 func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
-	data, err := s.state.JSON()
+	data, err := s.state.MarshalJSON()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -273,26 +272,6 @@ func (s *Server) handlePutStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.state.SetStatus(&status)
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (s *Server) handlePatchMeta(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
-	if err != nil {
-		http.Error(w, "read error", http.StatusBadRequest)
-		return
-	}
-
-	var patch struct {
-		Title    *string `json:"title"`
-		Subtitle *string `json:"subtitle"`
-	}
-	if err := json.Unmarshal(body, &patch); err != nil {
-		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	s.state.PatchMeta(patch.Title, patch.Subtitle)
 	w.WriteHeader(http.StatusNoContent)
 }
 

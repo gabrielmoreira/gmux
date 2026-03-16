@@ -28,7 +28,6 @@ export const SessionSchema = z.object({
   socket_path: z.string().optional(),
   terminal_cols: z.number().int().positive().optional(),
   terminal_rows: z.number().int().positive().optional(),
-  base_title: z.string().optional(),
   shell_title: z.string().optional(),
   adapter_title: z.string().optional(),
   binary_hash: z.string().optional(),

@@ -108,28 +108,20 @@ func main() {
 		SocketPath: sockPath,
 	})
 
-	// Build session title — use basename for the command if it's a path
-	sessionTitle := *title
-	if sessionTitle == "" {
-		display := make([]string, len(args))
-		copy(display, args)
-		if len(display) > 0 && strings.Contains(display[0], "/") {
-			display[0] = filepath.Base(display[0])
-		}
-		sessionTitle = strings.Join(display, " ")
-	}
-
-	// Create in-memory session state (replaces metadata files)
+	// Create in-memory session state
 	state := session.New(session.Config{
-		ID:          sessionID,
-		Command:     args,
-		Cwd:         workDir,
-		Kind:        a.Name(),
-		SocketPath:  sockPath,
-		Title:       sessionTitle,
-		TitlePinned: *title != "",
-		BinaryHash:  binhash.Self(),
+		ID:         sessionID,
+		Command:    args,
+		Cwd:        workDir,
+		Kind:       a.Name(),
+		SocketPath: sockPath,
+		BinaryHash: binhash.Self(),
 	})
+
+	// If user provided an explicit title, treat it as an adapter-level title
+	if *title != "" {
+		state.SetAdapterTitle(*title)
+	}
 
 	// Common env vars — set for every child, per ADR-0005
 	env := []string{

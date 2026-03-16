@@ -168,8 +168,6 @@ func (sub *Subscriptions) handleEvent(sessionID, socketPath, eventType string, d
 
 	case "meta":
 		var meta struct {
-			Title        *string `json:"title"`
-			BaseTitle    *string `json:"base_title"`
 			ShellTitle   *string `json:"shell_title"`
 			AdapterTitle *string `json:"adapter_title"`
 			Subtitle     *string `json:"subtitle"`
@@ -178,12 +176,6 @@ func (sub *Subscriptions) handleEvent(sessionID, socketPath, eventType string, d
 		if err := json.Unmarshal(data, &meta); err != nil {
 			log.Printf("subscribe: %s: bad meta event: %v", sessionID, err)
 			return
-		}
-		if meta.Title != nil {
-			sess.Title = *meta.Title
-		}
-		if meta.BaseTitle != nil {
-			sess.BaseTitle = *meta.BaseTitle
 		}
 		if meta.ShellTitle != nil {
 			sess.ShellTitle = *meta.ShellTitle

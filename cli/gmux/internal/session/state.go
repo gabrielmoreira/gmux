@@ -1,10 +1,11 @@
 // Package session holds the in-memory session state for a single gmux-run
 // instance. This is the source of truth — served via /meta and /events.
-// Replaces the file-based metadata package.
 package session
 
 import (
 	"encoding/json"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,7 +13,6 @@ import (
 )
 
 // State is the in-memory session state served by GET /meta.
-// Fields follow session-schema-v2.
 type State struct {
 	mu sync.RWMutex
 
@@ -21,7 +21,7 @@ type State struct {
 	CreatedAt string   `json:"created_at"`
 	Command   []string `json:"command"`
 	Cwd       string   `json:"cwd"`
-	Kind      string   `json:"kind"` // adapter name
+	Kind      string   `json:"kind"`
 
 	// Process state (owned by runner)
 	Alive     bool   `json:"alive"`
@@ -30,67 +30,82 @@ type State struct {
 	StartedAt string `json:"started_at"`
 	ExitedAt  string `json:"exited_at,omitempty"`
 
-	// Display (set by adapter or child)
-	Title        string          `json:"title"`
-	BaseTitle    string          `json:"base_title,omitempty"`
-	ShellTitle   string          `json:"shell_title,omitempty"`
-	AdapterTitle string          `json:"adapter_title,omitempty"`
-	Subtitle     string          `json:"subtitle,omitempty"`
-	Status       *adapter.Status `json:"status"`
-	Unread       bool            `json:"unread"`
+	// Title sources. Display title is resolved: adapter > shell > command basename.
+	ShellTitle   string `json:"shell_title,omitempty"`
+	AdapterTitle string `json:"adapter_title,omitempty"`
+
+	// Other display fields
+	Subtitle string          `json:"subtitle,omitempty"`
+	Status   *adapter.Status `json:"status"`
+	Unread   bool            `json:"unread"`
 
 	// Transport
 	SocketPath string `json:"socket_path"`
 
-	// Build identity — sha256 of the gmux binary, computed once at startup.
-	// Used by gmuxd to detect stale runners from a different build.
+	// Build identity
 	BinaryHash string `json:"binary_hash,omitempty"`
 
-	// Subscribers for /events SSE
+	// SSE subscribers (not serialized)
 	subs []chan Event
-
-	// Title precedence:
-	// adapter title > shell/OSC title > base title.
 }
 
 // Event is sent over SSE to /events subscribers.
 type Event struct {
-	Type string      `json:"type"` // "status", "meta", "exit"
+	Type string      `json:"type"`
 	Data interface{} `json:"data"`
 }
 
 // Config for creating a new session state.
 type Config struct {
-	ID          string
-	Command     []string
-	Cwd         string
-	Kind        string
-	SocketPath  string
-	Title       string
-	TitlePinned bool // true for explicit/user-provided titles that should beat shell fallback
-	BinaryHash  string
+	ID         string
+	Command    []string
+	Cwd        string
+	Kind       string
+	SocketPath string
+	BinaryHash string
 }
 
 // New creates a new session state.
 func New(cfg Config) *State {
-	now := time.Now().UTC().Format(time.RFC3339)
-	adapterTitle := ""
-	if cfg.TitlePinned {
-		adapterTitle = cfg.Title
-	}
 	return &State{
-		ID:           cfg.ID,
-		CreatedAt:    now,
-		Command:      cfg.Command,
-		Cwd:          cfg.Cwd,
-		Kind:         cfg.Kind,
-		SocketPath:   cfg.SocketPath,
-		Title:        cfg.Title,
-		BaseTitle:    cfg.Title,
-		AdapterTitle: adapterTitle,
-		BinaryHash:   cfg.BinaryHash,
-		Alive:        false,
+		ID:         cfg.ID,
+		CreatedAt:  time.Now().UTC().Format(time.RFC3339),
+		Command:    cfg.Command,
+		Cwd:        cfg.Cwd,
+		Kind:       cfg.Kind,
+		SocketPath: cfg.SocketPath,
+		BinaryHash: cfg.BinaryHash,
+		Alive:      false,
 	}
+}
+
+// Title returns the resolved display title: adapter > shell > command basename.
+func (s *State) Title() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.titleLocked()
+}
+
+func (s *State) titleLocked() string {
+	if s.AdapterTitle != "" {
+		return s.AdapterTitle
+	}
+	if s.ShellTitle != "" {
+		return s.ShellTitle
+	}
+	return commandBasename(s.Command)
+}
+
+func commandBasename(cmd []string) string {
+	if len(cmd) == 0 {
+		return ""
+	}
+	display := make([]string, len(cmd))
+	copy(display, cmd)
+	if strings.Contains(display[0], "/") {
+		display[0] = filepath.Base(display[0])
+	}
+	return strings.Join(display, " ")
 }
 
 // SetRunning marks the session as alive with the given PID.
@@ -117,7 +132,7 @@ func (s *State) SetUnread(unread bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.Unread == unread {
-		return // no change, avoid noisy events
+		return
 	}
 	s.Unread = unread
 	s.emit(Event{Type: "meta", Data: map[string]any{"unread": unread}})
@@ -131,57 +146,27 @@ func (s *State) SetStatus(status *adapter.Status) {
 	s.emit(Event{Type: "status", Data: status})
 }
 
-func (s *State) resolvedTitleLocked() string {
-	if s.AdapterTitle != "" {
-		return s.AdapterTitle
-	}
-	if s.ShellTitle != "" {
-		return s.ShellTitle
-	}
-	return s.BaseTitle
-}
-
-func (s *State) emitMetaLocked() {
-	s.emit(Event{Type: "meta", Data: map[string]string{
-		"title":         s.Title,
-		"base_title":    s.BaseTitle,
-		"shell_title":   s.ShellTitle,
-		"adapter_title": s.AdapterTitle,
-		"subtitle":      s.Subtitle,
-	}})
-}
-
-// SetAdapterTitle updates the high-priority adapter title. Empty clears it,
-// allowing shell title (if any) to become visible again.
+// SetAdapterTitle sets the high-priority title from the adapter/file monitor.
 func (s *State) SetAdapterTitle(title string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.AdapterTitle = title
-	resolved := s.resolvedTitleLocked()
-	if resolved == s.Title {
+	if s.AdapterTitle == title {
 		return
 	}
-	s.Title = resolved
+	s.AdapterTitle = title
 	s.emitMetaLocked()
 }
 
-// SetShellTitle updates the fallback shell/OSC title. It is only visible when
-// no adapter title is currently set.
+// SetShellTitle sets the terminal/OSC title, used when no adapter title is set.
 func (s *State) SetShellTitle(title string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.ShellTitle = title
-	resolved := s.resolvedTitleLocked()
-	if resolved == s.Title {
+	if s.ShellTitle == title {
 		return
 	}
-	s.Title = resolved
+	s.ShellTitle = title
 	s.emitMetaLocked()
 }
-
-// SetTitle updates the display title.
-// Deprecated: use SetAdapterTitle or SetShellTitle so precedence is preserved.
-func (s *State) SetTitle(title string) { s.SetAdapterTitle(title) }
 
 // SetSubtitle updates the display subtitle.
 func (s *State) SetSubtitle(subtitle string) {
@@ -191,31 +176,31 @@ func (s *State) SetSubtitle(subtitle string) {
 	s.emitMetaLocked()
 }
 
-// PatchMeta updates title and/or subtitle from a partial update.
-// Title patches are treated as adapter titles (higher priority than shell titles).
-// An empty title clears the adapter title, revealing the shell or base title.
-func (s *State) PatchMeta(title, subtitle *string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if title != nil {
-		s.AdapterTitle = *title
-		s.Title = s.resolvedTitleLocked()
-	}
-	if subtitle != nil {
-		s.Subtitle = *subtitle
-	}
-	s.emitMetaLocked()
+func (s *State) emitMetaLocked() {
+	s.emit(Event{Type: "meta", Data: map[string]string{
+		"title":         s.titleLocked(),
+		"shell_title":   s.ShellTitle,
+		"adapter_title": s.AdapterTitle,
+		"subtitle":      s.Subtitle,
+	}})
 }
 
-// JSON returns the full state as JSON bytes.
-func (s *State) JSON() ([]byte, error) {
+// MarshalJSON produces JSON with a computed "title" field.
+func (s *State) MarshalJSON() ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return json.Marshal(s)
+
+	type Alias State
+	return json.Marshal(&struct {
+		Title string `json:"title"`
+		*Alias
+	}{
+		Title: s.titleLocked(),
+		Alias: (*Alias)(s),
+	})
 }
 
-// Subscribe returns a channel that receives events. The caller must
-// call Unsubscribe when done.
+// Subscribe returns a channel that receives events.
 func (s *State) Subscribe() chan Event {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -237,13 +222,11 @@ func (s *State) Unsubscribe(ch chan Event) {
 	}
 }
 
-// emit sends an event to all subscribers (must be called under write lock).
 func (s *State) emit(e Event) {
 	for _, ch := range s.subs {
 		select {
 		case ch <- e:
 		default:
-			// Drop if subscriber is slow — SSE will recover
 		}
 	}
 }

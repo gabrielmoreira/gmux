@@ -106,16 +106,16 @@ func (sc *Scanner) Scan() {
 				}
 
 				sess := store.Session{
-					ID:        "file-" + info.ID[:8],
-					CreatedAt: info.Created.UTC().Format(time.RFC3339),
-					Command:   cmd,
-					Cwd:       cwd,
-					Kind:      a.Name(),
-					Alive:     false,
-					Title:     info.Title,
-					ResumeKey: info.ID,
-					Resumable: true,
-					Status:    nil,
+					ID:           "file-" + info.ID[:8],
+					CreatedAt:    info.Created.UTC().Format(time.RFC3339),
+					Command:      cmd,
+					Cwd:          cwd,
+					Kind:         a.Name(),
+					Alive:        false,
+					AdapterTitle: info.Title,
+					ResumeKey:    info.ID,
+					Resumable:    true,
+					Status:       nil,
 				}
 
 				sc.store.Upsert(sess)

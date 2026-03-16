@@ -1,6 +1,8 @@
 package store
 
 import (
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -18,7 +20,6 @@ type Session struct {
 	StartedAt    string   `json:"started_at,omitempty"`
 	ExitedAt     string   `json:"exited_at,omitempty"`
 	Title        string   `json:"title,omitempty"`
-	BaseTitle    string   `json:"base_title,omitempty"`
 	ShellTitle   string   `json:"shell_title,omitempty"`
 	AdapterTitle string   `json:"adapter_title,omitempty"`
 	Subtitle     string   `json:"subtitle,omitempty"`
@@ -88,6 +89,7 @@ func (s *Store) Get(id string) (Session, bool) {
 	return sess, ok
 }
 
+// resolveTitle picks the best title: adapter > shell > command basename.
 func resolveTitle(sess Session) string {
 	if sess.AdapterTitle != "" {
 		return sess.AdapterTitle
@@ -95,8 +97,16 @@ func resolveTitle(sess Session) string {
 	if sess.ShellTitle != "" {
 		return sess.ShellTitle
 	}
-	if sess.BaseTitle != "" {
-		return sess.BaseTitle
+	// Fall back to command basename (same logic the runner uses).
+	if len(sess.Command) > 0 {
+		base := filepath.Base(sess.Command[0])
+		if len(sess.Command) > 1 {
+			parts := make([]string, len(sess.Command))
+			parts[0] = base
+			copy(parts[1:], sess.Command[1:])
+			return strings.Join(parts, " ")
+		}
+		return base
 	}
 	return sess.Title
 }
