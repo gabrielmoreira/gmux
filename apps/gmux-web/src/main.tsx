@@ -980,23 +980,20 @@ function EmptyState({ launchers, health }: { launchers: LauncherDef[]; health: H
 
   return (
     <div class="empty-state">
-      <div class="empty-state-icon">⌘</div>
-      <div class="empty-state-title">gmux</div>
-
       <div class="empty-state-columns">
         {launchers.length > 0 && (
           <div class="empty-state-panel">
-            <div class="empty-state-heading">Launch a session</div>
-            <div class="empty-state-launchers">
+            <div class="empty-state-heading">New session</div>
+            <div class="empty-state-list">
               {launchers.map(l => (
                 <button
                   key={l.id}
-                  class={`empty-state-launch-btn ${launching === l.id ? 'launching' : ''}`}
+                  class={`empty-state-list-item ${launching === l.id ? 'launching' : ''}`}
                   onClick={() => handleLaunch(l.id)}
                   disabled={launching !== null}
                 >
-                  {l.label}
-                  {l.description && <span class="launch-desc">{l.description}</span>}
+                  <span class="empty-state-list-label">{l.label}</span>
+                  {l.description && <span class="empty-state-list-desc">{l.description}</span>}
                 </button>
               ))}
             </div>
@@ -1004,21 +1001,20 @@ function EmptyState({ launchers, health }: { launchers: LauncherDef[]; health: H
         )}
 
         <div class="empty-state-panel">
-          <div class="empty-state-heading">From the terminal</div>
-          <div class="empty-state-commands">
-            <div class="empty-state-cmd">
-              <code>gmux <span class="cmd-arg">&lt;command&gt;</span></code>
-              <span class="cmd-hint">run any command in a session</span>
+          <div class="empty-state-heading">Terminal</div>
+          <div class="empty-state-list">
+            <div class="empty-state-hint">
+              <code>gmux <span class="cmd-placeholder">&lt;command&gt;</span></code>
+              <span class="empty-state-list-desc">wrap any command</span>
             </div>
-            <div class="empty-state-cmd">
+            <div class="empty-state-hint">
               <code>gmux</code>
-              <span class="cmd-hint">open this UI</span>
+              <span class="empty-state-list-desc">open this page</span>
             </div>
           </div>
           {tailscaleURL && (
-            <div class="empty-state-remote">
-              <span class="cmd-hint">remote access via </span>
-              <a href={tailscaleURL} class="url-link"><code>{maskTailnet(tailscaleURL)}</code></a>
+            <div class="empty-state-footer">
+              <a href={tailscaleURL} class="empty-state-remote-link">{maskTailnet(tailscaleURL)}</a>
             </div>
           )}
         </div>
