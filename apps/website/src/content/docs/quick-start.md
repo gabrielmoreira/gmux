@@ -73,12 +73,11 @@ chromium --app=http://localhost:8790
 
 # macOS
 open -na "Google Chrome" --args --app=http://localhost:8790
-
-# Edge
-msedge --app=http://localhost:8790
 ```
 
 This gives gmux its own window and taskbar entry — feels like a native app. You can also "Install" it as a PWA from the browser menu (⋮ → Install gmux) for the same effect with a desktop shortcut.
+
+**Why app mode matters:** browsers reserve certain keyboard shortcuts like `Ctrl+T`, `Ctrl+N`, and `Ctrl+W` that can't be intercepted by web pages. In a normal browser tab, these will open a new tab / window / close the tab instead of reaching your terminal. In app mode, these shortcuts are passed through to gmux and work as expected.
 
 ## Mobile
 
