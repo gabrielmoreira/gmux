@@ -1,8 +1,8 @@
-go 1.26
+go 1.26.1
 
 use (
+	./cli/gmuxr
 	./packages/adapter
 	./services/gmuxd
-	./cli/gmuxr
 	./tests/e2e
 )

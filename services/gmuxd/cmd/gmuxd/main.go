@@ -16,9 +16,11 @@ import (
 
 	"github.com/gmuxapp/gmux/packages/adapter"
 	"github.com/gmuxapp/gmux/packages/adapter/adapters"
+	"github.com/gmuxapp/gmux/services/gmuxd/internal/config"
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/discovery"
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/sessionfiles"
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/store"
+	"github.com/gmuxapp/gmux/services/gmuxd/internal/tsauth"
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/wsproxy"
 )
 
@@ -522,10 +524,42 @@ func main() {
 
 	mux.Handle("/", spaHandler())
 
-	port := envOr("GMUXD_PORT", "8790")
+	// ── Load config ──
+
+	cfg := config.Load()
+
+	// Env var overrides config file port.
+	port := envOr("GMUXD_PORT", fmt.Sprintf("%d", cfg.Port))
+
+	// ── Optional tailscale listener ──
+
+	if cfg.Tailscale.Enabled {
+		stateDir := tailscaleStateDir()
+		tsListener, err := tsauth.Start(tsauth.Config{
+			Hostname: cfg.Tailscale.Hostname,
+			Allow:    cfg.Tailscale.Allow,
+		}, stateDir, mux)
+		if err != nil {
+			log.Printf("tailscale: %v (continuing without tailscale)", err)
+		} else {
+			defer tsListener.Shutdown()
+		}
+	}
+
+	// ── Localhost listener (always, no auth) ──
+
 	addr := "127.0.0.1:" + port
 	log.Printf("gmuxd listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))
+}
+
+// tailscaleStateDir returns the directory for tsnet state.
+func tailscaleStateDir() string {
+	if dir := os.Getenv("XDG_STATE_HOME"); dir != "" {
+		return filepath.Join(dir, "gmux")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".local", "state", "gmux")
 }
 
 func sendSSE(w http.ResponseWriter, event string, payload any) {
