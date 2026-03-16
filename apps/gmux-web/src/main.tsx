@@ -117,6 +117,11 @@ async function fetchHealth(): Promise<HealthData | null> {
   }
 }
 
+/** Mask tailnet name for privacy: "https://gmux.angler-map.ts.net" → "https://gmux.an****.ts.net" */
+function maskTailnet(url: string): string {
+  return url.replace(/(\.\w{2})[^.]*(?=\.ts\.net)/, '$1****')
+}
+
 let _configCache: LaunchConfig | null = null
 
 async function fetchConfig(): Promise<LaunchConfig> {
@@ -971,7 +976,6 @@ function EmptyState({ launchers, health }: { launchers: LauncherDef[]; health: H
     launchSession(id).finally(() => setLaunching(null))
   }
 
-  const localURL = location.origin
   const tailscaleURL = health?.tailscale_url
 
   return (
@@ -979,42 +983,42 @@ function EmptyState({ launchers, health }: { launchers: LauncherDef[]; health: H
       <div class="empty-state-icon">⌘</div>
       <div class="empty-state-title">gmux</div>
 
-      {launchers.length > 0 && (
-        <div class="empty-state-launchers">
-          {launchers.map(l => (
-            <button
-              key={l.id}
-              class={`empty-state-launch-btn ${launching === l.id ? 'launching' : ''}`}
-              onClick={() => handleLaunch(l.id)}
-              disabled={launching !== null}
-            >
-              {l.label}
-              {l.description && <span class="launch-desc">{l.description}</span>}
-            </button>
-          ))}
-        </div>
-      )}
+      <div class="empty-state-columns">
+        {launchers.length > 0 && (
+          <div class="empty-state-panel">
+            <div class="empty-state-heading">Launch a session</div>
+            <div class="empty-state-launchers">
+              {launchers.map(l => (
+                <button
+                  key={l.id}
+                  class={`empty-state-launch-btn ${launching === l.id ? 'launching' : ''}`}
+                  onClick={() => handleLaunch(l.id)}
+                  disabled={launching !== null}
+                >
+                  {l.label}
+                  {l.description && <span class="launch-desc">{l.description}</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
-      <div class="empty-state-section">
-        <div class="empty-state-heading">Launch from terminal</div>
-        <div class="empty-state-commands">
-          <code>gmux python main.py</code>
-          <code>gmux pi</code>
-          <code>gmux make watch</code>
-        </div>
-      </div>
-
-      <div class="empty-state-section">
-        <div class="empty-state-heading">Access</div>
-        <div class="empty-state-urls">
-          <div class="empty-state-url">
-            <span class="url-label">local</span>
-            <code>{localURL}</code>
+        <div class="empty-state-panel">
+          <div class="empty-state-heading">From the terminal</div>
+          <div class="empty-state-commands">
+            <div class="empty-state-cmd">
+              <code>gmux <span class="cmd-arg">&lt;command&gt;</span></code>
+              <span class="cmd-hint">run any command in a session</span>
+            </div>
+            <div class="empty-state-cmd">
+              <code>gmux</code>
+              <span class="cmd-hint">open this UI</span>
+            </div>
           </div>
           {tailscaleURL && (
-            <div class="empty-state-url">
-              <span class="url-label">remote</span>
-              <a href={tailscaleURL} class="url-link"><code>{tailscaleURL}</code></a>
+            <div class="empty-state-remote">
+              <span class="cmd-hint">remote access via </span>
+              <a href={tailscaleURL} class="url-link"><code>{maskTailnet(tailscaleURL)}</code></a>
             </div>
           )}
         </div>

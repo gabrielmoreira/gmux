@@ -110,7 +110,7 @@ func defaults() Config {
 	return Config{
 		Port: 8790,
 		Tailscale: TailscaleConfig{
-			Hostname: "gmuxd",
+			Hostname: "gmux",
 		},
 	}
 }

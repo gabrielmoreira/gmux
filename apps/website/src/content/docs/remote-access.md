@@ -11,7 +11,7 @@ By default, gmux only listens on localhost. To access it from another device —
 
 ## Why tailscale?
 
-[Tailscale](https://tailscale.com) is a zero-config VPN built on [WireGuard](https://www.wireguard.com/). It creates a private network (a "tailnet") between your devices — your desktop, phone, laptop, servers — without opening ports or configuring firewalls. Devices find each other by name (e.g. `gmuxd.your-tailnet.ts.net`) and all traffic is end-to-end encrypted.
+[Tailscale](https://tailscale.com) is a zero-config VPN built on [WireGuard](https://www.wireguard.com/). It creates a private network (a "tailnet") between your devices — your desktop, phone, laptop, servers — without opening ports or configuring firewalls. Devices find each other by name (e.g. `gmux.your-tailnet.ts.net`) and all traffic is end-to-end encrypted.
 
 gmux uses tailscale because exposing terminal access to a network demands strong guarantees:
 
@@ -54,12 +54,12 @@ Create or edit `~/.config/gmux/config.toml`:
 enabled = true
 ```
 
-That's it. Your own tailscale account is automatically whitelisted — gmuxd detects the node owner at startup. The hostname defaults to `gmuxd`, making it available at `https://gmuxd.your-tailnet.ts.net`.
+That's it. Your own tailscale account is automatically whitelisted — gmuxd detects the node owner at startup. The hostname defaults to `gmuxd`, making it available at `https://gmux.your-tailnet.ts.net`.
 
 | Field | Description |
 |---|---|
 | `enabled` | Start the tailscale listener. Default `false`. |
-| `hostname` | The machine name on your tailnet. Default `gmuxd`, giving you `gmuxd.your-tailnet.ts.net`. Change this if you run gmux on multiple machines. |
+| `hostname` | The machine name on your tailnet. Default `gmux`, giving you `gmux.your-tailnet.ts.net`. Change this if you run gmux on multiple machines. |
 
 ### 4. Restart gmuxd
 
@@ -73,7 +73,7 @@ Look for the log line:
 
 ```
 tsauth: node owner you@github auto-whitelisted
-tsauth: listening on https://gmuxd (allowed: [you@github])
+tsauth: listening on https://gmux.your-tailnet.ts.net (allowed: [you@github])
 ```
 
 ### 5. Connect
@@ -81,7 +81,7 @@ tsauth: listening on https://gmuxd (allowed: [you@github])
 On your other device, open:
 
 ```
-https://gmuxd.your-tailnet.ts.net
+https://gmux.your-tailnet.ts.net
 ```
 
 The connection is HTTPS with a valid certificate. No certificate warnings, no HTTP fallback.

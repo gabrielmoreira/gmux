@@ -20,8 +20,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Tailscale.Enabled {
 		t.Error("tailscale should be disabled by default")
 	}
-	if cfg.Tailscale.Hostname != "gmuxd" {
-		t.Errorf("hostname = %q, want %q", cfg.Tailscale.Hostname, "gmuxd")
+	if cfg.Tailscale.Hostname != "gmux" {
+		t.Errorf("hostname = %q, want %q", cfg.Tailscale.Hostname, "gmux")
 	}
 	if len(cfg.Tailscale.Allow) != 0 {
 		t.Errorf("allow = %v, want empty", cfg.Tailscale.Allow)

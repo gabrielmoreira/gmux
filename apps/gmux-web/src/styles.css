@@ -841,9 +841,17 @@ body {
   color: var(--text-muted);
 }
 
-.empty-state-section {
-  margin-top: 16px;
-  text-align: center;
+.empty-state-columns {
+  display: flex;
+  gap: 40px;
+  margin-top: 8px;
+}
+
+.empty-state-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 180px;
 }
 
 .empty-state-heading {
@@ -852,55 +860,52 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
-  margin-bottom: 8px;
 }
 
 .empty-state-commands {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
-.empty-state-commands code {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.empty-state-urls {
+.empty-state-cmd {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 
-.empty-state-url {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: center;
-}
-
-.empty-state-url .url-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  min-width: 48px;
-  text-align: right;
-}
-
-.empty-state-url code {
+.empty-state-cmd code {
   font-family: var(--font-mono);
   font-size: 13px;
   color: var(--text-secondary);
 }
 
-.empty-state-url .url-link {
+.empty-state-cmd .cmd-arg {
+  color: var(--text-muted);
+}
+
+.cmd-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.empty-state-remote {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.empty-state-remote code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.url-link {
   text-decoration: none;
 }
 
-.empty-state-url .url-link:hover code {
+.url-link:hover code {
   color: var(--accent);
 }
 

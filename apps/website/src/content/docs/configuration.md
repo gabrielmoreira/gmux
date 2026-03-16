@@ -20,7 +20,7 @@ port = 8790
 # See the Remote Access guide for setup.
 [tailscale]
 enabled = false
-hostname = "gmuxd"       # → gmuxd.your-tailnet.ts.net
+hostname = "gmux"       # → gmux.your-tailnet.ts.net
 allow = []               # additional login names (owner is auto-whitelisted)
 ```
 

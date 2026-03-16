@@ -81,7 +81,7 @@ func main() {
 		// Print access URLs.
 		fmt.Fprintf(os.Stderr, "  local:  %s\n", gmuxdAddr)
 		if tsURL := parseTailscaleURL(healthBody); tsURL != "" {
-			fmt.Fprintf(os.Stderr, "  remote: %s\n", tsURL)
+			fmt.Fprintf(os.Stderr, "  remote: %s\n", maskTailscaleURL(tsURL))
 		}
 
 		openBrowser(gmuxdAddr)
@@ -416,6 +416,35 @@ func parseTailscaleURL(body []byte) string {
 		return resp.Data.TailscaleURL
 	}
 	return ""
+}
+
+// maskTailscaleURL masks the tailnet name for privacy.
+// "https://gmux.angler-map.ts.net" → "https://gmux.an******.ts.net"
+func maskTailscaleURL(url string) string {
+	// Find the tailnet part: between first dot after hostname and .ts.net
+	tsNet := ".ts.net"
+	idx := strings.Index(url, tsNet)
+	if idx < 0 {
+		return url
+	}
+	// Find the start of the tailnet name (after "https://gmux.")
+	schemeEnd := strings.Index(url, "://")
+	if schemeEnd < 0 {
+		return url
+	}
+	hostStart := schemeEnd + 3
+	// Find first dot after the hostname prefix
+	dotIdx := strings.Index(url[hostStart:], ".")
+	if dotIdx < 0 {
+		return url
+	}
+	tailnetStart := hostStart + dotIdx + 1
+	tailnetName := url[tailnetStart:idx]
+	if len(tailnetName) <= 2 {
+		return url
+	}
+	masked := tailnetName[:2] + "****"
+	return url[:tailnetStart] + masked + url[idx:]
 }
 
 func deregisterFromGmuxd(sessionID string) {
