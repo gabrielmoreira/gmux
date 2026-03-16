@@ -3,8 +3,8 @@ title: Remote Access
 description: Access gmux from your phone, tablet, or another machine over tailscale.
 ---
 
-:::danger[Full shell access]
-Anyone you grant remote access to can run arbitrary commands on your machine, read all terminal output (including secrets), and interact with every session. Treat the allow list like your SSH `authorized_keys` — only add people you fully trust.
+:::caution[Not a collaboration tool]
+Remote access is designed for accessing **your own machine** from your other devices — your phone, tablet, or laptop. It is not intended for sharing terminal sessions with other people. Every connected user gets full, unrestricted shell access.
 :::
 
 By default, gmux only listens on localhost. To access it from another device — your phone on the couch, a laptop in another room, or a tablet on the go — you can enable the built-in tailscale listener.
@@ -32,16 +32,14 @@ Create or edit `~/.config/gmux/config.toml`:
 ```toml
 [tailscale]
 enabled = true
-hostname = "gmux"
 ```
 
-That's it. Your own tailscale account is automatically whitelisted — gmuxd detects the node owner at startup.
+That's it. Your own tailscale account is automatically whitelisted — gmuxd detects the node owner at startup. The hostname defaults to `gmuxd`, making it available at `https://gmuxd.your-tailnet.ts.net`.
 
 | Field | Description |
 |---|---|
 | `enabled` | Start the tailscale listener. Default `false`. |
-| `hostname` | The machine name on your tailnet. This becomes `gmux.your-tailnet.ts.net`. |
-| `allow` | Additional tailscale login names that can connect. Your own account is always included automatically. |
+| `hostname` | The machine name on your tailnet. Default `gmuxd`, giving you `gmuxd.your-tailnet.ts.net`. Change this if you run gmux on multiple machines. |
 
 ### 3. Restart gmuxd
 
@@ -55,7 +53,7 @@ Look for the log line:
 
 ```
 tsauth: node owner you@github auto-whitelisted
-tsauth: listening on https://gmux (allowed: [you@github])
+tsauth: listening on https://gmuxd (allowed: [you@github])
 ```
 
 ### 4. Connect
@@ -63,7 +61,7 @@ tsauth: listening on https://gmux (allowed: [you@github])
 On your other device, open:
 
 ```
-https://gmux.your-tailnet.ts.net
+https://gmuxd.your-tailnet.ts.net
 ```
 
 The connection is HTTPS with a valid certificate (issued automatically by tailscale via Let's Encrypt). No certificate warnings, no HTTP fallback.
@@ -81,18 +79,19 @@ This check runs on every HTTP request and WebSocket upgrade — there are no ses
 
 The tailscale listener is a second, independent listener. The localhost listener (`127.0.0.1:8790`) continues to work exactly as before, with no authentication. Local access is always available — you can't lock yourself out by misconfiguring the allow list.
 
-## Multiple users
+## Adding other accounts
 
-Your own account is always included. To also grant access to a colleague:
+If you use multiple tailscale accounts (e.g. personal and work), add them to the allow list:
 
 ```toml
 [tailscale]
 enabled = true
-hostname = "gmux"
-allow = ["colleague@github"]
+allow = ["your-other-account@github"]
 ```
 
-Everyone on the allow list (plus you) gets the same full access. There are no permission levels — if someone can connect, they can see and interact with all sessions. Only add people you trust with terminal access to your machine.
+:::danger[Think twice before adding other people]
+The `allow` list should ideally only contain accounts that belong to you. There are no permission levels — everyone on the list gets full shell access to your machine, can read all terminal output (including secrets), launch processes, and kill sessions. This is equivalent to giving someone your SSH key.
+:::
 
 ## Troubleshooting
 

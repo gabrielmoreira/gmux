@@ -27,8 +27,8 @@ type TailscaleConfig struct {
 	// Enabled starts a tsnet listener on the tailnet. Default false.
 	Enabled bool `toml:"enabled"`
 
-	// Hostname is the tailscale machine name (e.g. "gmux" → gmux.tailnet.ts.net).
-	// Default "gmux".
+	// Hostname is the tailscale machine name (e.g. "gmuxd" → gmuxd.tailnet.ts.net).
+	// Default "gmuxd".
 	Hostname string `toml:"hostname"`
 
 	// Allow is the list of additional tailscale login names permitted to connect
@@ -110,7 +110,7 @@ func defaults() Config {
 	return Config{
 		Port: 8790,
 		Tailscale: TailscaleConfig{
-			Hostname: "gmux",
+			Hostname: "gmuxd",
 		},
 	}
 }
