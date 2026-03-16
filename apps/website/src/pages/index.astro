@@ -146,6 +146,19 @@ import heroMobile from '../assets/hero-mobile.png'
     </div>
   </section>
 
+  <!-- Closing CTA -->
+  <section class="section cta-section">
+    <div class="section-inner cta-inner">
+      <h2>Try it in two&nbsp;minutes</h2>
+      <div class="cta-install">
+        <div class="install-cmd">
+          <code>brew install gmuxapp/tap/gmux</code>
+        </div>
+      </div>
+      <a href="/quick-start/" class="hero-cta">Quick start</a>
+    </div>
+  </section>
+
   <!-- Footer -->
   <footer class="footer">
     <div class="footer-inner">
@@ -576,6 +589,23 @@ import heroMobile from '../assets/hero-mobile.png'
     color: var(--text-secondary);
     line-height: 1.65;
     font-size: 0.95rem;
+  }
+
+  /* --- Closing CTA --- */
+  .cta-inner {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.25rem;
+  }
+
+  .cta-section h2 {
+    margin-bottom: 0;
+  }
+
+  .cta-install .install-cmd {
+    width: auto;
   }
 
   /* --- Footer --- */
