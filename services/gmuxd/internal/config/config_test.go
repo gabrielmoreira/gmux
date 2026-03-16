@@ -60,6 +60,29 @@ allow = ["alice@github", "bob@github"]
 	}
 }
 
+func TestLoadFiltersEmptyAllowEntries(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	cfgDir := filepath.Join(dir, "gmux")
+	os.MkdirAll(cfgDir, 0o755)
+
+	content := `
+[tailscale]
+enabled = true
+allow = ["alice@github", "", "  ", "bob@github"]
+`
+	os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(content), 0o644)
+
+	cfg := Load()
+	if len(cfg.Tailscale.Allow) != 2 {
+		t.Fatalf("allow = %v, want 2 entries (empty strings filtered)", cfg.Tailscale.Allow)
+	}
+	if cfg.Tailscale.Allow[0] != "alice@github" || cfg.Tailscale.Allow[1] != "bob@github" {
+		t.Errorf("allow = %v", cfg.Tailscale.Allow)
+	}
+}
+
 func TestLoadBadTOML(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)

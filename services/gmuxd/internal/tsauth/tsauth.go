@@ -116,6 +116,9 @@ func (l *Listener) authMiddleware(next http.Handler) http.Handler {
 // tailscale ACLs for per-device control.
 // Comparison is case-insensitive.
 func (l *Listener) isAllowed(loginName string) bool {
+	if loginName == "" {
+		return false
+	}
 	loginLower := strings.ToLower(loginName)
 
 	for _, entry := range l.cfg.Allow {

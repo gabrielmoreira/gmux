@@ -52,10 +52,15 @@ func Load() Config {
 		return defaults()
 	}
 
-	// Normalize allow list entries.
-	for i, entry := range cfg.Tailscale.Allow {
-		cfg.Tailscale.Allow[i] = strings.TrimSpace(entry)
+	// Normalize allow list: trim whitespace, remove empty entries.
+	filtered := cfg.Tailscale.Allow[:0]
+	for _, entry := range cfg.Tailscale.Allow {
+		entry = strings.TrimSpace(entry)
+		if entry != "" {
+			filtered = append(filtered, entry)
+		}
 	}
+	cfg.Tailscale.Allow = filtered
 
 	return cfg
 }
