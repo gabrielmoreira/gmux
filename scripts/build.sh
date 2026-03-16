@@ -30,7 +30,8 @@ fi
 
 # ── Go binaries ──
 
-LDFLAGS="-s -w"
+VERSION="${VERSION:-dev}"
+LDFLAGS="-s -w -X main.version=$VERSION"
 
 echo "→ Building gmuxd…"
 (cd "$ROOT/services/gmuxd" && go build -ldflags "$LDFLAGS" -o "$BIN/gmuxd" ./cmd/gmuxd)

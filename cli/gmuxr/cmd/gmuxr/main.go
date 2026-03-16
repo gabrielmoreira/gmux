@@ -22,7 +22,9 @@ import (
 	"github.com/gmuxapp/gmux/packages/adapter/adapters"
 )
 
-const version = "0.1.0"
+// version is set at build time via -ldflags "-X main.version=..."
+// Falls back to "dev" for local builds.
+var version = "dev"
 
 func main() {
 	log.SetPrefix("gmuxr: ")
