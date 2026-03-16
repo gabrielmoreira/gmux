@@ -95,7 +95,7 @@ Adapters teach gmuxr how to work with specific tools. They're compiled into the 
 - **Auto-detection** — `gmuxr pi` recognizes pi and activates the pi adapter. No flags needed.
 - **Rich status** — adapters report what the child is doing: thinking, waiting for input, tests passing, build failing
 - **Child awareness** — any tool can self-report status via `PUT /status` on `$GMUX_SOCKET`, no adapter required
-- **Graceful fallback** — unknown commands get the generic adapter: activity detection, silence timeout, alive/dead tracking
+- **Graceful fallback** — unknown commands get the shell adapter
 
 ### Probes — directory-level intelligence
 Probes observe the working directory and enrich folder headings with project context.

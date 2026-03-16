@@ -1,5 +1,6 @@
 ---
-// gmux landing page
+import heroDesktop from '../assets/hero-desktop.png'
+import heroMobile from '../assets/hero-mobile.png'
 ---
 
 <html lang="en">
@@ -33,9 +34,7 @@
       <div class="hero-text">
         <h1>Live terminals for every process you run</h1>
         <p class="hero-sub">
-          gmux gives you a browser-based dashboard for all your AI agents,
-          test runners, and long-running processes. Grouped by project.
-          Accessible from any device.
+          gmux wraps AI agents, test runners, and long-running commands in a real terminal session and exposes them in the browser. Keep using your normal terminal. Check progress from your desktop or your phone.
         </p>
         <div class="hero-install">
           <div class="install-cmd" id="install-cmd">
@@ -47,18 +46,29 @@
           </div>
         </div>
         <div class="hero-actions">
-          <a href="/quick-start/" class="hero-cta">Read the docs</a>
+          <a href="/quick-start/" class="hero-cta">Quick start</a>
           <a href="https://github.com/gmuxapp/gmux" class="hero-secondary">Source on GitHub</a>
         </div>
       </div>
-      <div class="hero-image">
-        <img
-          src="/hero.png"
-          alt="gmux desktop and mobile interface showing test runners, AI agents, and terminal sessions grouped by project"
-          width="2668"
-          height="1875"
-          loading="eager"
-        />
+      <div class="hero-visual" aria-hidden="true">
+        <div class="hero-stage">
+          <img
+            class="hero-desktop-shot"
+            src={heroDesktop.src}
+            alt=""
+            width={heroDesktop.width}
+            height={heroDesktop.height}
+            loading="eager"
+          />
+          <img
+            class="hero-mobile-shot"
+            src={heroMobile.src}
+            alt=""
+            width={heroMobile.width}
+            height={heroMobile.height}
+            loading="eager"
+          />
+        </div>
       </div>
     </div>
   </section>
@@ -317,51 +327,77 @@
 
   /* --- Hero --- */
   .hero {
-    padding: clamp(3rem, 8vw, 6rem) 0 0;
+    padding: clamp(3rem, 7vw, 5.5rem) 0 clamp(2rem, 5vw, 3.5rem);
   }
 
   .hero-content {
-    max-width: 1100px;
+    max-width: 1180px;
     margin: 0 auto;
     padding: 0 clamp(1.25rem, 4vw, 2.5rem);
+    display: grid;
+    grid-template-columns: minmax(0, 0.98fr) minmax(0, 1.22fr);
+    gap: clamp(1.75rem, 3vw, 3.25rem);
+    align-items: center;
   }
 
   .hero-text {
-    max-width: 600px;
-    margin-bottom: clamp(2.5rem, 5vw, 4rem);
+    max-width: 36rem;
+    gap: 1rem;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .hero-eyebrow {
+    font-family: 'Instrument Sans', sans-serif;
+    font-size: 0.76rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 0.75rem;
   }
 
   .hero h1 {
-    font-size: clamp(2rem, 4.5vw, 3rem);
+    font-size: clamp(2.2rem, 4.25vw, 3.55rem);
     font-weight: 700;
     color: var(--text);
-    margin-bottom: 1rem;
-    letter-spacing: -0.03em;
+    margin-bottom: 0.9rem;
+    letter-spacing: -0.042em;
+    max-width: 13ch;
+    line-height: 1.02;
+    text-wrap: balance;
   }
 
   .hero-sub {
-    font-size: clamp(1rem, 1.2vw, 1.1rem);
+    font-size: clamp(1rem, 1.15vw, 1.12rem);
     color: var(--text-secondary);
-    line-height: 1.7;
-    margin-bottom: 1.75rem;
-    max-width: 50ch;
+    line-height: 1.66;
+    margin-bottom: 0.8rem;
+    max-width: 47ch;
   }
 
-  /* Install command */
+  .hero-meta {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    line-height: 1.5;
+    margin-bottom: 1.45rem;
+  }
+
   .hero-install {
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.9rem;
   }
 
   .install-cmd {
     display: inline-flex;
     align-items: center;
     gap: 0.75rem;
+    min-height: 2.9rem;
     background: var(--code-bg);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 0.5rem 0.65rem 0.5rem 0.85rem;
+    border-radius: 10px;
+    padding: 0.55rem 0.7rem 0.55rem 0.95rem;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.88rem;
+    font-size: 0.9rem;
     color: var(--text);
   }
 
@@ -382,42 +418,73 @@
   }
   .copy-btn:hover { color: var(--text); }
 
-  /* Actions */
   .hero-actions {
     display: flex;
     align-items: center;
-    gap: 1.5rem;
+    gap: 1.1rem;
+    flex-wrap: wrap;
   }
 
   .hero-cta {
     font-family: 'Instrument Sans', sans-serif;
     font-weight: 600;
-    font-size: 0.9rem;
+    font-size: 0.94rem;
     color: var(--bg);
     background: var(--text);
-    padding: 0.5rem 1.25rem;
-    border-radius: 6px;
+    padding: 0.68rem 1.15rem;
+    border-radius: 10px;
     transition: opacity 0.15s;
   }
   .hero-cta:hover { text-decoration: none; opacity: 0.85; }
 
   .hero-secondary {
-    font-size: 0.9rem;
+    font-size: 0.94rem;
     font-weight: 500;
     color: var(--text-secondary);
   }
   .hero-secondary:hover { color: var(--text); text-decoration: none; }
 
-  /* Hero image */
-  .hero-image {
-    margin-left: -2rem;
-    margin-right: -2rem;
+  .hero-visual {
+    min-width: 0;
   }
 
-  .hero-image img {
-    width: 100%;
-    height: auto;
+  .hero-stage {
+    position: relative;
+    padding: 0 0 1.4rem 0;
+  }
+
+  .hero-stage::before {
+    content: '';
+    position: absolute;
+    inset: 10% 10% 14% 12%;
+    background: radial-gradient(circle at 45% 40%, oklch(16% 0.018 250 / 0.65), transparent 70%);
+    filter: blur(28px);
+    pointer-events: none;
+  }
+
+  .hero-desktop-shot,
+  .hero-mobile-shot {
     display: block;
+    height: auto;
+    position: relative;
+  }
+
+  .hero-desktop-shot {
+    width: min(100%, 820px);
+    margin-left: auto;
+    border-radius: 4px;
+    border: 1px solid oklch(100% 0 0 / 0.08);
+    box-shadow: 0 28px 70px oklch(4% 0.01 250 / 0.42);
+  }
+
+  .hero-mobile-shot {
+    position: absolute;
+    width: clamp(230px, 15.5vw, 176px);
+    right: -1.5rem;
+    bottom: -0.15rem;
+    border-radius: 16px;
+    box-shadow: 0 22px 55px oklch(4% 0.01 250 / 0.85);
+    border: 10px solid oklch(20% 0.01 250 / 1)
   }
 
   /* --- Sections --- */
@@ -607,19 +674,88 @@
   .footer-license { color: var(--text-muted); }
 
   /* --- Responsive --- */
+  @media (max-width: 900px) {
+    .hero-content {
+      grid-template-columns: 1fr;
+      gap: 1.8rem;
+    }
+
+    .hero-text {
+      max-width: 42rem;
+    }
+
+    .hero h1 {
+      max-width: 14ch;
+    }
+
+    .hero-stage {
+      padding-bottom: 1.4rem;
+    }
+
+    .hero-desktop-shot {
+      width: 100%;
+    }
+
+    .hero-mobile-shot {
+      width: clamp(116px, 23vw, 170px);
+      right: 0.1rem;
+      bottom: -0.1rem;
+    }
+  }
+
   @media (max-width: 640px) {
-    .hero h1 { font-size: 1.75rem; }
+    .hero {
+      padding-top: 2.4rem;
+    }
+
+    .hero h1 {
+      font-size: 2rem;
+      max-width: 13ch;
+    }
+
+    .hero-sub {
+      font-size: 1rem;
+    }
+
+    .hero-meta {
+      font-size: 0.86rem;
+      margin-bottom: 1.2rem;
+    }
+
+    .install-cmd {
+      width: 100%;
+      justify-content: space-between;
+      padding-right: 0.8rem;
+    }
+
+    .install-cmd code {
+      white-space: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .install-cmd code::-webkit-scrollbar {
+      display: none;
+    }
+
     .hero-actions { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
-    .hero-image { margin-left: -1rem; margin-right: -1rem; }
+    .hero-stage { margin-right: -0.1rem; }
+    .hero-mobile-shot {
+      width: 29vw;
+      min-width: 110px;
+      border-radius: 20px;
+    }
     .step { flex-direction: column; gap: 0.75rem; }
     .step-num { width: 28px; height: 28px; font-size: 0.8rem; }
     .status-grid { grid-template-columns: 1fr; }
+    .footer-inner { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
+    .footer-links { flex-wrap: wrap; }
   }
 
   /* --- Animations --- */
   @media (prefers-reduced-motion: no-preference) {
     .hero-text { animation: fadeUp 0.5s ease-out both; }
-    .hero-image { animation: fadeUp 0.6s 0.12s ease-out both; }
+    .hero-visual { animation: fadeUp 0.6s 0.12s ease-out both; }
     .section { animation: fadeUp 0.5s ease-out both; }
 
     @keyframes fadeUp {

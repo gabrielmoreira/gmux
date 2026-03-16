@@ -25,7 +25,7 @@ description: The session metadata model shared between gmuxr, gmuxd, and the web
 | `created_at` | ISO 8601 | When the session was created |
 | `command` | string[] | The command being run |
 | `cwd` | string | Working directory |
-| `kind` | string | Adapter kind: `"generic"`, `"pi"`, `"opencode"`, etc. |
+| `kind` | string | Adapter kind: `"shell"`, `"pi"`, `"opencode"`, etc. |
 
 ### Process State (owned by gmuxr, authoritative)
 
