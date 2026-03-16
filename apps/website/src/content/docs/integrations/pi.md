@@ -9,7 +9,7 @@ gmux has built-in support for [pi](https://github.com/mariozechner/pi-coding-age
 
 ### Live status
 
-The sidebar shows when pi is actively working. gmux detects pi's spinner animation and reports it as an **active** status (green pulsing dot). When the spinner stops, the dot goes quiet.
+The sidebar shows when pi is actively working. gmux detects pi's spinner animation and reports it as **working** (pulsing cyan dot). When the spinner stops, the dot disappears.
 
 ### Session titles from conversations
 
@@ -26,7 +26,7 @@ If you rename a session with pi's `/name` command, gmux picks up the new name au
 
 ### Resumable sessions
 
-When a pi session exits, it remains in the sidebar as a resumable entry (hollow dot). Click it to resume exactly where you left off — gmux launches `pi --session <path> -c` with the right session file.
+When a pi session exits, it remains in the sidebar as a resumable entry. Click it to resume exactly where you left off — gmux launches `pi --session <path> -c` with the right session file.
 
 Resumable sessions are deduplicated: if you're already running a session that matches a resumable entry, only the live one appears.
 

@@ -111,16 +111,13 @@ Return a `Status` from `Monitor()` to update the sidebar:
 
 ```go
 type Status struct {
-    Label string // Short text: "thinking", "3/10 passed"
-    State string // active | attention | success | error | paused | info
-    Icon  string // Optional emoji
-    Title string // Optional title override
+    Label   string // Short text: "thinking", "3/10 passed"
+    Working bool   // true while the tool is busy (shows pulsing cyan dot)
+    Title   string // Optional: if set, updates the session title
 }
 ```
 
-The `State` field determines the visual treatment. The `Label` appears as secondary text. Set `Title` if the PTY output itself should rename the session.
-
-For the user-facing meaning of each state, see [Adapters](/adapters).
+`Working` controls the sidebar dot (cyan pulse when true, hidden when false). `Label` appears as secondary text below the session title. Set `Title` if the PTY output should rename the session.
 
 ## Adapter resolution
 

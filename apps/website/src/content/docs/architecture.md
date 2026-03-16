@@ -1,83 +1,75 @@
 ---
 title: Architecture
-description: "Broad system structure: runner, daemon, and web client."
+description: "Runtime structure: runner, daemon, and embedded web UI."
 ---
 
-This page is the high-level architecture view. It explains the major runtime pieces and how they relate.
-
-For adapter-specific internals — including session-file discovery, attribution, resumable sessions, and child callbacks — see [Adapter Architecture](/develop/adapter-architecture).
-
-## Core runtime pieces
+## Runtime pieces
 
 ### `gmuxr` — session runner
 
-`gmuxr` runs once per session. It:
+One per session. It:
 
-- launches the child under a PTY
-- owns the live session state
-- exposes the session on a Unix socket
-- accepts terminal attachment and child callbacks
-- runs adapter logic over the child output
+- Launches the child process under a PTY
+- Owns the live session state (title, status, working flag)
+- Exposes the session on a Unix socket (metadata, events, terminal attach)
+- Runs adapter logic over child output
 
 `gmuxr` is the source of truth for a live session.
 
 ### `gmuxd` — machine daemon
 
-`gmuxd` runs once per machine. It:
+One per machine. It:
 
-- discovers live runner sockets
-- reads and caches session metadata
-- subscribes to live updates
-- exposes machine-level APIs for sessions, launchers, attach, kill, and resume
-- proxies terminal websocket connections to the right runner
+- Discovers live runner sockets (`/tmp/gmux-sessions/*.sock`)
+- Subscribes to runner events for live updates
+- Watches adapter session files (e.g. pi's JSONL conversations)
+- Serves the REST API, SSE event stream, and WebSocket proxy
+- Serves the embedded web frontend as a SPA
+- Manages session launch, kill, dismiss, and resume
 
-`gmuxd` is rebuildable. If it restarts, it can rediscover running sessions.
+`gmuxd` is stateless — if it restarts, it rediscovers running sessions.
 
-### Web client
+`gmuxr` auto-starts `gmuxd` if it isn't already running.
 
-The repo currently contains separate web pieces for the UI and API layer:
+### Web UI
 
-- `apps/gmux-web` — browser frontend
-- `apps/gmux-api` — API layer used by the frontend during development
-
-The exact production serving/deployment story is still in flux, so this page stays focused on the runtime responsibilities rather than packaging.
+The frontend is built with Preact and xterm.js, compiled into a static bundle, and embedded into the `gmuxd` binary via `go:embed`. No separate web server or Node.js runtime is needed.
 
 ## Data flow
 
-At a high level:
-
-```text
-gmuxr ──Unix socket──→ gmuxd ──HTTP/SSE/WS──→ browser client
+```
+gmuxr ──Unix socket──→ gmuxd ──HTTP/SSE/WS──→ browser
 ```
 
-Typical flow:
-
-1. `gmuxr` launches a session and exposes it on a socket
+1. `gmuxr` launches a session and exposes it on a Unix socket
 2. `gmuxd` discovers the socket and reads session metadata
-3. `gmuxd` subscribes to updates from the runner
-4. the browser reads machine-level state from the daemon-facing API
-5. terminal attachment is proxied back to the owning runner
+3. `gmuxd` subscribes to the runner's SSE event stream for live updates
+4. The browser fetches sessions from `GET /v1/sessions` and subscribes to `GET /v1/events`
+5. When you click a session, the browser opens a WebSocket to `/ws/{id}` — gmuxd proxies this to the runner's socket
+6. Terminal I/O flows directly between browser and runner through the proxy
 
-## Design principles
+## API surface
 
-- **runner-authoritative** — live session truth lives in `gmuxr`
-- **rebuildable daemon** — `gmuxd` can recover by rediscovering runners
-- **browser-first supervision** — the UI is reachable without a desktop-specific shell app
-- **adapter extensibility** — tool-specific behavior is layered on top of generic process supervision
+All served by `gmuxd` on a single port (default `:8790`):
 
-## What this page intentionally does not cover
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/sessions` | List all sessions |
+| `GET /v1/config` | Launcher configuration |
+| `POST /v1/launch` | Launch a new session |
+| `POST /v1/sessions/{id}/kill` | Kill a session |
+| `POST /v1/sessions/{id}/dismiss` | Kill + remove |
+| `POST /v1/sessions/{id}/resume` | Resume a resumable session |
+| `GET /v1/events` | SSE stream of session changes |
+| `WS /ws/{id}` | Terminal WebSocket proxy |
+| `GET /` | Embedded web UI (SPA) |
 
-This page does not try to explain:
+## Repo layout
 
-- adapter capability interfaces
-- session-file scanning and attribution
-- child self-report protocol details
-- resume mechanics for specific integrations
-
-Those details live in [Adapter Architecture](/develop/adapter-architecture).
-
-## TODO
-
-- Add one concrete end-to-end example: launch command → appears in sidebar → attach terminal → resume later.
-- Add a small diagram that reflects the current repo layout (`gmuxr`, `gmuxd`, `gmux-api`, `gmux-web`) instead of the older simplified 3-box view.
-- Document the intended production deployment shape once that stabilizes.
+| Path | Language | Purpose |
+|---|---|---|
+| `cli/gmuxr` | Go | Session launcher — PTY, WebSocket, adapters |
+| `services/gmuxd` | Go | Daemon — discovery, proxy, embedded web UI |
+| `apps/gmux-web` | TypeScript/Preact | Browser UI — sidebar, terminal, header |
+| `packages/protocol` | TypeScript | Shared schemas (zod-validated) |
+| `packages/adapter` | Go | Adapter interfaces and built-in adapters |

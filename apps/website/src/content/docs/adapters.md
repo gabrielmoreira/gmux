@@ -1,50 +1,46 @@
 ---
 title: Adapters
-description: How gmux understands what your process is doing.
+description: How gmux understands different tools.
 ---
 
-Adapters teach gmux how to interpret specific tools. When you launch a session, gmux automatically detects what you're running and activates the right adapter. On the `gmuxd` side, gmux also checks which adapter-backed tools are actually installed on the current machine so the launch UI only shows integrations that are available there.
-
-This page is the high-level overview. For implementation details, see [Writing an Adapter](/develop/writing-adapters). For the runtime model behind `gmuxr`, `gmuxd`, session files, and resume, see [Adapter Architecture](/develop/adapter-architecture).
+Adapters teach gmux how to interpret specific tools. When you launch a session, gmux automatically detects what you're running and applies the right adapter.
 
 ## What adapters do
 
 An adapter watches the terminal output of your process and reports structured status to the sidebar:
 
-- **Active** — the tool is working (green pulsing dot)
-- **Attention** — the tool needs your input (orange dot)
-- **Error** — something went wrong (red dot)
+- **Working** — the tool is busy (cyan pulsing dot)
+- **Idle** — the tool is waiting (no dot)
 
-Without an adapter, gmux still tracks whether the process is alive — but with one, you get meaningful at-a-glance status.
+Without an adapter, gmux still tracks whether the process is alive — but with one, you get meaningful at-a-glance status like "thinking" or "42/50 passed".
 
 ## Automatic detection
 
 You don't configure adapters. gmux recognizes tools by their command name:
 
 ```bash
-gmuxr pi            # → pi adapter (spinner detection, session resume)
-gmuxr bash          # → shell adapter (terminal title tracking)
-gmuxr -- make build # → shell adapter
+gmuxr pi            # → pi adapter
+gmuxr bash          # → shell adapter (fallback)
+gmuxr -- make build # → shell adapter (fallback)
 ```
 
-If no specific adapter matches, the **shell** adapter takes over. It tracks terminal title changes so your shell's working directory appears in the sidebar, but it doesn't report rich activity status.
+If no specific adapter matches, the **shell** adapter handles it.
 
-For launchers, gmuxd also probes each compiled adapter at startup. Built-in examples:
+## Built-in adapters
 
-- **shell** is always available
-- **pi** is only available when `pi --version` succeeds on that machine
+### Shell (default)
 
-That lets the UI hide adapters that gmux knows about in principle but that are not usable on the current host.
+Always active. Tracks terminal title changes so your shell's `PS1` or tool-set window titles appear in the sidebar.
 
-## Beyond status: session files
+### Pi
 
-Some adapters understand more than just terminal output. The **pi** adapter knows where pi stores its session files, how to extract conversation titles from them, and how to resume previous sessions. This means:
+Active when `pi` is installed. Provides:
 
-- Resumable sessions appear in the sidebar even when nothing is running
-- Session titles show the first message you sent, not just `pi`
-- Renaming a session with `/name` updates the sidebar in real time
+- Live status detection (thinking, waiting for input, etc.)
+- Session titles from conversation files
+- Resumable sessions — exited sessions stay in the sidebar, click to resume
 
-See [Integrations → pi](/integrations/pi) for the concrete behavior.
+See [pi integration](/integrations/pi) for details.
 
 ## Self-reporting
 
@@ -53,12 +49,10 @@ Any process can report its own status without a custom adapter. `gmuxr` sets `$G
 ```bash
 curl -X PUT --unix-socket "$GMUX_SOCKET" \
   http://localhost/status \
-  -d '{"label": "building", "state": "active"}'
+  -H 'Content-Type: application/json' \
+  -d '{"label": "building", "working": true}'
 ```
 
-Self-reported status takes priority over adapter-detected status. This lets tools integrate with gmux directly, without changes to gmux itself.
+## Writing an adapter
 
-## Learn more
-
-- Want to add support for a new tool? See [Writing an Adapter](/develop/writing-adapters).
-- Want to understand how `gmuxr`, `gmuxd`, session files, and resume fit together? See [Adapter Architecture](/develop/adapter-architecture).
+Adapters are Go files in `packages/adapter/adapters/`. See [Writing an Adapter](/develop/writing-adapters) for the recipe, or [Adapter Architecture](/develop/adapter-architecture) for the runtime model.

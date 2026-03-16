@@ -3,26 +3,26 @@ title: Introduction
 description: What gmux is and why it exists.
 ---
 
-gmux is a browser-based session manager for AI agents, test runners, and long-running processes. It gives you a live terminal for each one, grouped by working directory, with status updates that help you notice what needs attention.
+gmux is a browser-based session manager for AI agents, test runners, and long-running processes. It gives you a live sidebar of everything running across a machine, so you can notice what needs attention without cycling through terminal tabs.
 
 ## Why it exists
 
-Long-running command-line work is easy to start and annoying to supervise. AI agents, watchers, builds, and shells end up scattered across tabs and panes. gmux puts them in one place and makes them visible from a browser.
+Long-running command-line work is easy to start and annoying to supervise. AI agents, watchers, builds, and shells end up buried in tabs or tmux panes. gmux makes them visible from a browser.
 
-## What gmux does today
+## What it does
 
-- launches commands as managed sessions through `gmuxr`
-- keeps per-session state in the runner
-- aggregates live sessions in `gmuxd`
-- exposes a browser UI for browsing sessions and attaching to terminals
-- uses adapters to add tool-specific status and metadata
-- supports resumable sessions for tools that have file-backed adapters, such as `pi`
+- Launches commands as managed sessions through `gmuxr`
+- Groups sessions by project directory in a sidebar
+- Shows live status: working (cyan dot) or needs attention (amber dot)
+- Provides a full interactive terminal in the browser via xterm.js
+- Uses adapters to extract tool-specific status (e.g. pi's thinking/waiting states)
+- Supports resumable sessions for tools with file-backed state
 
 ## Core concepts
 
 ### Sessions
 
-A session is any command launched through `gmuxr`.
+A session is any command launched through `gmuxr`:
 
 ```bash
 gmuxr pi
@@ -30,38 +30,31 @@ gmuxr -- make build
 gmuxr -- pytest --watch
 ```
 
-Each session gets a PTY, runner-owned state, and a terminal attachment path.
+Each session gets a PTY, a WebSocket server, and an adapter for status extraction.
 
 ### Adapters
 
-Adapters teach gmux how to interpret specific tools. The built-in adapters currently matter most for:
+Adapters teach gmux how to interpret specific tools:
 
-- **shell** — terminal title tracking
-- **pi** — live status, file-backed titles, and resume
+- **shell** — terminal title tracking (default fallback)
+- **pi** — live status detection, file-backed titles, and session resume
 
-See [Adapters](/adapters) for the high-level overview.
+See [Adapters](/adapters) for details.
 
-### Runtime split
+### Architecture
 
-At a high level:
-
-```text
-gmuxr (per session) → gmuxd (per machine) → browser client
+```
+gmuxr (per session) → gmuxd (per machine) → browser
 ```
 
-- `gmuxr` owns the child process and its live state
-- `gmuxd` discovers sessions and serves aggregated machine-level state
-- the browser UI renders the session list and terminal view
+- **gmuxr** owns the child process and its live state
+- **gmuxd** discovers sessions, proxies connections, and serves the web UI
+- **Browser** renders the sidebar and attaches to terminals
 
-See [Architecture](/architecture) for the broad system view and [Adapter Architecture](/develop/adapter-architecture) for adapter-specific runtime details.
-
-## TODO
-
-- Document the user-facing browser/UI flow more concretely, with screenshots or a short walkthrough.
-- Add a short page on session lifecycle and resume semantics from a user's point of view.
+See [Architecture](/architecture) for the full picture.
 
 ## Next steps
 
-- [Quick Start](/quick-start)
-- [Architecture](/architecture)
-- [Adapters](/adapters)
+- [Quick Start](/quick-start) — install and run
+- [Architecture](/architecture) — how the pieces fit together
+- [Adapters](/adapters) — how gmux understands different tools

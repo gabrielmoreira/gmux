@@ -236,7 +236,7 @@ Example:
 ```bash
 curl --unix-socket "$GMUX_SOCKET" http://localhost/status \
   -X PUT -H 'Content-Type: application/json' \
-  -d '{"label":"building","state":"active"}'
+  -d '{"label":"building","working":true}'
 ```
 
 This is the escape hatch for tools that want native gmux integration without needing a custom PTY parser.
