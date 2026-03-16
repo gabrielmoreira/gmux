@@ -784,49 +784,27 @@ body {
 .empty-state {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 20px;
 }
 
-.empty-state-columns {
-  display: flex;
-  gap: 1px;
-  background: var(--border);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.empty-state-panel {
+.empty-state-launchers {
   display: flex;
   flex-direction: column;
-  background: var(--bg);
-  min-width: 220px;
-  padding: 16px 0 10px;
+  min-width: 200px;
 }
 
-.empty-state-heading {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  padding: 0 16px 8px;
-}
-
-.empty-state-list {
-  display: flex;
-  flex-direction: column;
-}
-
-.empty-state-list-item {
+.empty-state-launcher {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 7px 16px;
+  padding: 9px 16px;
   background: none;
   border: none;
+  border-radius: 6px;
   cursor: pointer;
   text-align: left;
   transition: background 0.1s;
@@ -835,69 +813,44 @@ body {
   font-size: 14px;
 }
 
-.empty-state-list-item:hover {
+.empty-state-launcher:hover {
   background: var(--bg-hover);
 }
 
-.empty-state-list-item:disabled {
+.empty-state-launcher:disabled {
   opacity: 0.5;
   cursor: default;
 }
 
-.empty-state-list-label {
+.empty-state-launcher-label {
   font-weight: 500;
 }
 
-.empty-state-list-desc {
+.empty-state-launcher-desc {
   font-size: 12px;
   color: var(--text-muted);
   margin-left: auto;
 }
 
-.empty-state-hint {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 16px;
-}
-
-.empty-state-hint code {
-  font-family: 'Fira Code', monospace;
-  font-size: 13px;
-  color: var(--text);
-  background: var(--bg-surface);
-  padding: 3px 7px;
-  border-radius: 4px;
-  width: fit-content;
-}
-
-.empty-state-hint-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  padding-left: 1px;
-}
-
-.cmd-placeholder {
-  color: var(--text-muted);
-}
-
-.empty-state-url {
+.empty-state-meta {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 16px;
-}
-
-.empty-state-url-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  min-width: 40px;
-}
-
-.empty-state-url code {
-  font-family: 'Fira Code', monospace;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.empty-state-meta code {
+  font-family: 'Fira Code', monospace;
+  font-size: 11px;
+}
+
+.empty-state-dot {
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0.5;
 }
 
 /* ── Mobile ── */

@@ -980,53 +980,29 @@ function EmptyState({ launchers, health }: { launchers: LauncherDef[]; health: H
 
   return (
     <div class="empty-state">
-      <div class="empty-state-columns">
-        {launchers.length > 0 && (
-          <div class="empty-state-panel">
-            <div class="empty-state-heading">New session</div>
-            <div class="empty-state-list">
-              {launchers.map(l => (
-                <button
-                  key={l.id}
-                  class={`empty-state-list-item ${launching === l.id ? 'launching' : ''}`}
-                  onClick={() => handleLaunch(l.id)}
-                  disabled={launching !== null}
-                >
-                  <span class="empty-state-list-label">{l.label}</span>
-                  {l.description && <span class="empty-state-list-desc">{l.description}</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div class="empty-state-panel">
-          <div class="empty-state-heading">Terminal</div>
-          <div class="empty-state-list">
-            <div class="empty-state-hint">
-              <code>gmux <span class="cmd-placeholder">&lt;command&gt;</span></code>
-              <span class="empty-state-hint-desc">wrap any command</span>
-            </div>
-            <div class="empty-state-hint">
-              <code>gmux</code>
-              <span class="empty-state-hint-desc">open this page</span>
-            </div>
-          </div>
-
-          <div class="empty-state-heading" style={{ marginTop: 'auto' }}>Access</div>
-          <div class="empty-state-list">
-            <div class="empty-state-url">
-              <span class="empty-state-url-label">local</span>
-              <code>{location.origin}</code>
-            </div>
-            {tailscaleURL && (
-              <div class="empty-state-url">
-                <span class="empty-state-url-label">remote</span>
-                <code>{maskTailnet(tailscaleURL)}</code>
-              </div>
-            )}
-          </div>
+      {launchers.length > 0 && (
+        <div class="empty-state-launchers">
+          {launchers.map(l => (
+            <button
+              key={l.id}
+              class={`empty-state-launcher ${launching === l.id ? 'launching' : ''}`}
+              onClick={() => handleLaunch(l.id)}
+              disabled={launching !== null}
+            >
+              <span class="empty-state-launcher-label">{l.label}</span>
+              {l.description && <span class="empty-state-launcher-desc">{l.description}</span>}
+            </button>
+          ))}
         </div>
+      )}
+      <div class="empty-state-meta">
+        <span>or <code>gmux {'<command>'}</code> from terminal</span>
+        <span class="empty-state-dot" />
+        <span>{location.host}</span>
+        {tailscaleURL && <>
+          <span class="empty-state-dot" />
+          <span>{maskTailnet(tailscaleURL).replace('https://', '')}</span>
+        </>}
       </div>
     </div>
   )
