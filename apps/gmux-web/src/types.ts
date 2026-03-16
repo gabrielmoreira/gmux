@@ -24,6 +24,9 @@ export interface Session {
   socket_path: string
   terminal_cols?: number
   terminal_rows?: number
+  base_title?: string
+  shell_title?: string
+  adapter_title?: string
   binary_hash?: string
   stale?: boolean
 }

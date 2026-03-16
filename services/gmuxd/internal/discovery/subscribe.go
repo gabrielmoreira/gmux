@@ -18,9 +18,9 @@ import (
 // Subscriptions tracks active SSE subscriptions to runner /events endpoints.
 // One subscription per session — receives status/meta/exit events and updates the store.
 type Subscriptions struct {
-	mu      sync.Mutex
-	active  map[string]context.CancelFunc // sessionID → cancel
-	store   *store.Store
+	mu     sync.Mutex
+	active map[string]context.CancelFunc // sessionID → cancel
+	store  *store.Store
 }
 
 func NewSubscriptions(s *store.Store) *Subscriptions {
@@ -168,19 +168,31 @@ func (sub *Subscriptions) handleEvent(sessionID, socketPath, eventType string, d
 
 	case "meta":
 		var meta struct {
-			Title    string `json:"title"`
-			Subtitle string `json:"subtitle"`
-			Unread   *bool  `json:"unread"`
+			Title        *string `json:"title"`
+			BaseTitle    *string `json:"base_title"`
+			ShellTitle   *string `json:"shell_title"`
+			AdapterTitle *string `json:"adapter_title"`
+			Subtitle     *string `json:"subtitle"`
+			Unread       *bool   `json:"unread"`
 		}
 		if err := json.Unmarshal(data, &meta); err != nil {
 			log.Printf("subscribe: %s: bad meta event: %v", sessionID, err)
 			return
 		}
-		if meta.Title != "" {
-			sess.Title = meta.Title
+		if meta.Title != nil {
+			sess.Title = *meta.Title
 		}
-		if meta.Subtitle != "" {
-			sess.Subtitle = meta.Subtitle
+		if meta.BaseTitle != nil {
+			sess.BaseTitle = *meta.BaseTitle
+		}
+		if meta.ShellTitle != nil {
+			sess.ShellTitle = *meta.ShellTitle
+		}
+		if meta.AdapterTitle != nil {
+			sess.AdapterTitle = *meta.AdapterTitle
+		}
+		if meta.Subtitle != nil {
+			sess.Subtitle = *meta.Subtitle
 		}
 		if meta.Unread != nil {
 			sess.Unread = *meta.Unread

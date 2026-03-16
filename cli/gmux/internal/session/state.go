@@ -31,10 +31,13 @@ type State struct {
 	ExitedAt  string `json:"exited_at,omitempty"`
 
 	// Display (set by adapter or child)
-	Title    string          `json:"title"`
-	Subtitle string          `json:"subtitle,omitempty"`
-	Status   *adapter.Status `json:"status"`
-	Unread   bool            `json:"unread"`
+	Title        string          `json:"title"`
+	BaseTitle    string          `json:"base_title,omitempty"`
+	ShellTitle   string          `json:"shell_title,omitempty"`
+	AdapterTitle string          `json:"adapter_title,omitempty"`
+	Subtitle     string          `json:"subtitle,omitempty"`
+	Status       *adapter.Status `json:"status"`
+	Unread       bool            `json:"unread"`
 
 	// Transport
 	SocketPath string `json:"socket_path"`
@@ -46,11 +49,8 @@ type State struct {
 	// Subscribers for /events SSE
 	subs []chan Event
 
-	// Title precedence state (not serialized):
+	// Title precedence:
 	// adapter title > shell/OSC title > base title.
-	baseTitle    string `json:"-"`
-	shellTitle   string `json:"-"`
-	adapterTitle string `json:"-"`
 }
 
 // Event is sent over SSE to /events subscribers.
@@ -86,10 +86,10 @@ func New(cfg Config) *State {
 		Kind:         cfg.Kind,
 		SocketPath:   cfg.SocketPath,
 		Title:        cfg.Title,
+		BaseTitle:    cfg.Title,
+		AdapterTitle: adapterTitle,
 		BinaryHash:   cfg.BinaryHash,
 		Alive:        false,
-		baseTitle:    cfg.Title,
-		adapterTitle: adapterTitle,
 	}
 }
 
@@ -132,17 +132,23 @@ func (s *State) SetStatus(status *adapter.Status) {
 }
 
 func (s *State) resolvedTitleLocked() string {
-	if s.adapterTitle != "" {
-		return s.adapterTitle
+	if s.AdapterTitle != "" {
+		return s.AdapterTitle
 	}
-	if s.shellTitle != "" {
-		return s.shellTitle
+	if s.ShellTitle != "" {
+		return s.ShellTitle
 	}
-	return s.baseTitle
+	return s.BaseTitle
 }
 
 func (s *State) emitMetaLocked() {
-	s.emit(Event{Type: "meta", Data: map[string]string{"title": s.Title, "subtitle": s.Subtitle}})
+	s.emit(Event{Type: "meta", Data: map[string]string{
+		"title":         s.Title,
+		"base_title":    s.BaseTitle,
+		"shell_title":   s.ShellTitle,
+		"adapter_title": s.AdapterTitle,
+		"subtitle":      s.Subtitle,
+	}})
 }
 
 // SetAdapterTitle updates the high-priority adapter title. Empty clears it,
@@ -150,7 +156,7 @@ func (s *State) emitMetaLocked() {
 func (s *State) SetAdapterTitle(title string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.adapterTitle = title
+	s.AdapterTitle = title
 	resolved := s.resolvedTitleLocked()
 	if resolved == s.Title {
 		return
@@ -164,7 +170,7 @@ func (s *State) SetAdapterTitle(title string) {
 func (s *State) SetShellTitle(title string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.shellTitle = title
+	s.ShellTitle = title
 	resolved := s.resolvedTitleLocked()
 	if resolved == s.Title {
 		return
@@ -192,7 +198,7 @@ func (s *State) PatchMeta(title, subtitle *string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if title != nil {
-		s.adapterTitle = *title
+		s.AdapterTitle = *title
 		s.Title = s.resolvedTitleLocked()
 	}
 	if subtitle != nil {

@@ -18,6 +18,9 @@ type Session struct {
 	StartedAt    string   `json:"started_at,omitempty"`
 	ExitedAt     string   `json:"exited_at,omitempty"`
 	Title        string   `json:"title,omitempty"`
+	BaseTitle    string   `json:"base_title,omitempty"`
+	ShellTitle   string   `json:"shell_title,omitempty"`
+	AdapterTitle string   `json:"adapter_title,omitempty"`
 	Subtitle     string   `json:"subtitle,omitempty"`
 	Status       *Status  `json:"status"`
 	Unread       bool     `json:"unread"`
@@ -85,7 +88,21 @@ func (s *Store) Get(id string) (Session, bool) {
 	return sess, ok
 }
 
+func resolveTitle(sess Session) string {
+	if sess.AdapterTitle != "" {
+		return sess.AdapterTitle
+	}
+	if sess.ShellTitle != "" {
+		return sess.ShellTitle
+	}
+	if sess.BaseTitle != "" {
+		return sess.BaseTitle
+	}
+	return sess.Title
+}
+
 func (s *Store) Upsert(sess Session) {
+	sess.Title = resolveTitle(sess)
 	// Derive close_action:
 	//   alive + resume-capable kind → minimize (−) — killing will yield a resumable session
 	//   everything else → dismiss (×) — remove from store
