@@ -1,6 +1,14 @@
 package discovery
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/gmuxapp/gmux/packages/adapter/adapters"
+	"github.com/gmuxapp/gmux/services/gmuxd/internal/store"
+)
 
 func TestSimilarityScoreExactMatch(t *testing.T) {
 	score := similarityScore("hello world", "hello world")
@@ -38,8 +46,8 @@ func TestLongestCommonSubstring(t *testing.T) {
 		a, b string
 		want int
 	}{
-		{"abcdef", "xbcdey", 4},     // "bcde"
-		{"hello", "world", 1},        // "l" or "o"
+		{"abcdef", "xbcdey", 4}, // "bcde"
+		{"hello", "world", 1},   // "l" or "o"
 		{"", "abc", 0},
 		{"same", "same", 4},
 		{"abc", "xyz", 0},
@@ -58,5 +66,58 @@ func TestTail(t *testing.T) {
 	}
 	if tail("hi", 10) != "hi" {
 		t.Fatal("expected 'hi' when n > len")
+	}
+}
+
+func TestNotifyNewSessionDoesNotStealTitleFromOldPiFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cwd := "/home/user/dev/project"
+	pi := adapters.NewPi()
+	sessionDir := pi.SessionDir(cwd)
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatalf("mkdir session dir: %v", err)
+	}
+
+	oldFile := filepath.Join(sessionDir, "2026-03-16T10-00-00-000Z_old.jsonl")
+	oldContent := "" +
+		"{\"type\":\"session\",\"id\":\"old-session\",\"cwd\":\"/home/user/dev/project\",\"timestamp\":\"2026-03-16T10:00:00Z\"}\n" +
+		"{\"type\":\"message\",\"role\":\"user\",\"text\":\"fix auth bug\"}\n"
+	if err := os.WriteFile(oldFile, []byte(oldContent), 0o644); err != nil {
+		t.Fatalf("write old jsonl: %v", err)
+	}
+
+	s := store.New()
+	s.Upsert(store.Session{
+		ID:         "sess-new",
+		Cwd:        cwd,
+		Kind:       "pi",
+		Alive:      true,
+		Title:      "pi",
+		SocketPath: "/tmp/gmux-sessions/sess-new.sock",
+	})
+
+	fm := NewFileMonitor(s)
+	if fm.watcher != nil {
+		defer fm.watcher.Close()
+	}
+
+	fm.NotifyNewSession("sess-new")
+
+	// Before the fix, NotifyNewSession eagerly attributed the most recent JSONL
+	// file in the directory, then asynchronously parsed it and overwrote the new
+	// session title with the old session's first user message.
+	time.Sleep(700 * time.Millisecond)
+
+	sess, ok := s.Get("sess-new")
+	if !ok {
+		t.Fatal("session disappeared")
+	}
+	if sess.Title != "pi" {
+		t.Fatalf("title = %q, want %q (do not steal old session title)", sess.Title, "pi")
+	}
+	if len(fm.attributions) != 0 {
+		t.Fatalf("attributions = %v, want none until a real file write occurs", fm.attributions)
 	}
 }

@@ -143,7 +143,7 @@ func (fm *FileMonitor) handleFSEvent(event fsnotify.Event) {
 // If the created path matches a pending session directory, we add a watch and
 // try attribution for the waiting sessions.
 func (fm *FileMonitor) handleNewSubdirLocked(path string) {
-	sessionIDs, pending := fm.pendingDirs[path]
+	_, pending := fm.pendingDirs[path]
 	if !pending {
 		return
 	}
@@ -158,10 +158,11 @@ func (fm *FileMonitor) handleNewSubdirLocked(path string) {
 	fm.addWatchLocked(path)
 	delete(fm.pendingDirs, path)
 
-	// Try attribution for each waiting session.
-	for _, sid := range sessionIDs {
-		fm.tryAttributeLocked(sid)
-	}
+	// Do not eagerly attribute an existing JSONL file here.
+	// A new session may start in a cwd that already has old session files,
+	// and attributing the "most recent" file would leak a stale title into
+	// the new live session. We wait for an actual file write/create event,
+	// then attribute based on the writing file.
 }
 
 // NotifyNewSession registers a session for file monitoring.
@@ -215,7 +216,6 @@ func (fm *FileMonitor) NotifyNewSession(sessionID string) {
 
 	if _, err := os.Stat(dir); err == nil {
 		fm.addWatchLocked(dir)
-		fm.tryAttributeLocked(sessionID)
 	} else {
 		// Directory doesn't exist yet — wait for it.
 		fm.pendingDirs[dir] = append(fm.pendingDirs[dir], sessionID)
@@ -376,34 +376,9 @@ func (fm *FileMonitor) attributeFileLocked(dir, filePath string) string {
 	return bestID
 }
 
-// tryAttributeLocked tries to attribute a file to a newly registered session.
-func (fm *FileMonitor) tryAttributeLocked(sessionID string) {
-	ms, ok := fm.sessions[sessionID]
-	if !ok {
-		return
-	}
-	dir := ms.filer.SessionDir(ms.cwd)
-	if dir == "" {
-		return
-	}
-
-	path := mostRecentJSONL(dir)
-	if path == "" {
-		return
-	}
-
-	// Don't steal a file already attributed to another session.
-	if existingID, ok := fm.attributions[path]; ok && existingID != sessionID {
-		return
-	}
-
-	fm.attributions[path] = sessionID
-	// Read initial content in background (small delay for child to write).
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		fm.handleFileChange(path)
-	}()
-}
+// New sessions are not eagerly attributed to an existing file.
+// Attribution only happens on an actual write/create event for a JSONL file.
+// This avoids reusing the title from the most recent old session in the same cwd.
 
 // --- Watch management ---
 
@@ -571,27 +546,4 @@ func findAdapter(kind string) adapter.Adapter {
 		}
 	}
 	return nil
-}
-
-func mostRecentJSONL(dir string) string {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return ""
-	}
-	var best string
-	var bestTime time.Time
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
-			continue
-		}
-		info, err := e.Info()
-		if err != nil {
-			continue
-		}
-		if info.ModTime().After(bestTime) {
-			bestTime = info.ModTime()
-			best = filepath.Join(dir, e.Name())
-		}
-	}
-	return best
 }
