@@ -2,10 +2,13 @@
 //
 // Missing file or missing keys are fine — everything has a safe default.
 // The file is never written by gmuxd; users create and edit it manually.
+//
+// Security-relevant fields are strictly validated: unknown keys, invalid
+// values, and dangerous combinations cause a hard error at startup.
 package config
 
 import (
-	"log"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,26 +33,38 @@ type TailscaleConfig struct {
 
 	// Allow is the list of tailscale login names permitted to connect
 	// (e.g. "user@github"). Matched against the peer's UserProfile.LoginName.
-	// Empty list = no one can connect (fail-closed).
+	// Empty list with enabled=true is a hard error (fail-closed).
 	Allow []string `toml:"allow"`
 }
 
 // Load reads the config file. Returns defaults if the file doesn't exist.
-func Load() Config {
+// Returns an error for malformed config, unknown fields, or invalid
+// security settings — gmuxd should refuse to start in these cases.
+func Load() (Config, error) {
 	cfg := defaults()
 
 	path := configPath()
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if !os.IsNotExist(err) {
-			log.Printf("config: error reading %s: %v (using defaults)", path, err)
+		if os.IsNotExist(err) {
+			return cfg, nil
 		}
-		return cfg
+		return cfg, fmt.Errorf("config: reading %s: %w", path, err)
 	}
 
-	if err := toml.Unmarshal(data, &cfg); err != nil {
-		log.Printf("config: error parsing %s: %v (using defaults)", path, err)
-		return defaults()
+	md, err := toml.Decode(string(data), &cfg)
+	if err != nil {
+		return Config{}, fmt.Errorf("config: parsing %s: %w", path, err)
+	}
+
+	// Reject unknown keys — a typo like "alow" instead of "allow" would
+	// silently result in an empty allow list, which is a security issue.
+	if undecoded := md.Undecoded(); len(undecoded) > 0 {
+		keys := make([]string, len(undecoded))
+		for i, k := range undecoded {
+			keys[i] = k.String()
+		}
+		return Config{}, fmt.Errorf("config: unknown keys in %s: %s", path, strings.Join(keys, ", "))
 	}
 
 	// Normalize allow list: trim whitespace, remove empty entries.
@@ -62,7 +77,37 @@ func Load() Config {
 	}
 	cfg.Tailscale.Allow = filtered
 
-	return cfg
+	if err := validate(cfg); err != nil {
+		return Config{}, fmt.Errorf("config: %s: %w", path, err)
+	}
+
+	return cfg, nil
+}
+
+func validate(cfg Config) error {
+	// Port range.
+	if cfg.Port < 1 || cfg.Port > 65535 {
+		return fmt.Errorf("port %d is out of range (1-65535)", cfg.Port)
+	}
+
+	// Tailscale: enabled requires a non-empty allow list.
+	if cfg.Tailscale.Enabled && len(cfg.Tailscale.Allow) == 0 {
+		return fmt.Errorf("tailscale.enabled is true but tailscale.allow is empty — no one would be able to connect")
+	}
+
+	// Tailscale: warn-as-error for allow entries missing "@" (likely not a login name).
+	for _, entry := range cfg.Tailscale.Allow {
+		if !strings.Contains(entry, "@") {
+			return fmt.Errorf("tailscale.allow entry %q doesn't look like a login name (expected format: user@provider)", entry)
+		}
+	}
+
+	// Tailscale: hostname must be non-empty when enabled.
+	if cfg.Tailscale.Enabled && cfg.Tailscale.Hostname == "" {
+		return fmt.Errorf("tailscale.enabled is true but tailscale.hostname is empty")
+	}
+
+	return nil
 }
 
 func defaults() Config {

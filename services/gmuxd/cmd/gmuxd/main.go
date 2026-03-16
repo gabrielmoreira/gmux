@@ -526,7 +526,10 @@ func main() {
 
 	// ── Load config ──
 
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("FATAL: %v", err)
+	}
 
 	// Env var overrides config file port.
 	port := envOr("GMUXD_PORT", fmt.Sprintf("%d", cfg.Port))

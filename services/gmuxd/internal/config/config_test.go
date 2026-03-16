@@ -3,14 +3,17 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestLoadDefaults(t *testing.T) {
-	// Point to a non-existent config dir.
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	cfg := Load()
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if cfg.Port != 8790 {
 		t.Errorf("port = %d, want 8790", cfg.Port)
 	}
@@ -28,21 +31,19 @@ func TestLoadDefaults(t *testing.T) {
 func TestLoadFromFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
-
-	cfgDir := filepath.Join(dir, "gmux")
-	os.MkdirAll(cfgDir, 0o755)
-
-	content := `
+	writeConfig(t, dir, `
 port = 9999
 
 [tailscale]
 enabled = true
 hostname = "mybox"
 allow = ["alice@github", "bob@github"]
-`
-	os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(content), 0o644)
+`)
 
-	cfg := Load()
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if cfg.Port != 9999 {
 		t.Errorf("port = %d, want 9999", cfg.Port)
 	}
@@ -63,18 +64,16 @@ allow = ["alice@github", "bob@github"]
 func TestLoadFiltersEmptyAllowEntries(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
-
-	cfgDir := filepath.Join(dir, "gmux")
-	os.MkdirAll(cfgDir, 0o755)
-
-	content := `
+	writeConfig(t, dir, `
 [tailscale]
 enabled = true
 allow = ["alice@github", "", "  ", "bob@github"]
-`
-	os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(content), 0o644)
+`)
 
-	cfg := Load()
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(cfg.Tailscale.Allow) != 2 {
 		t.Fatalf("allow = %v, want 2 entries (empty strings filtered)", cfg.Tailscale.Allow)
 	}
@@ -83,17 +82,106 @@ allow = ["alice@github", "", "  ", "bob@github"]
 	}
 }
 
-func TestLoadBadTOML(t *testing.T) {
+func TestLoadRejectsUnknownKeys(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
+	writeConfig(t, dir, `
+port = 8790
+[tailscale]
+enabled = true
+alow = ["user@github"]
+`)
 
-	cfgDir := filepath.Join(dir, "gmux")
-	os.MkdirAll(cfgDir, 0o755)
-	os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte("{{invalid"), 0o644)
-
-	cfg := Load()
-	// Should return defaults, not crash.
-	if cfg.Port != 8790 {
-		t.Errorf("port = %d, want 8790 (defaults)", cfg.Port)
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for unknown key 'alow'")
 	}
+	if !strings.Contains(err.Error(), "unknown keys") {
+		t.Errorf("error = %q, want mention of unknown keys", err)
+	}
+}
+
+func TestLoadRejectsEnabledWithEmptyAllow(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	writeConfig(t, dir, `
+[tailscale]
+enabled = true
+hostname = "gmux"
+`)
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for enabled with empty allow")
+	}
+	if !strings.Contains(err.Error(), "allow is empty") {
+		t.Errorf("error = %q, want mention of empty allow", err)
+	}
+}
+
+func TestLoadRejectsInvalidPort(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	writeConfig(t, dir, `port = 99999`)
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for out-of-range port")
+	}
+	if !strings.Contains(err.Error(), "out of range") {
+		t.Errorf("error = %q, want mention of out of range", err)
+	}
+}
+
+func TestLoadRejectsBadLoginFormat(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	writeConfig(t, dir, `
+[tailscale]
+enabled = true
+allow = ["not-a-login-name"]
+`)
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for bad login format")
+	}
+	if !strings.Contains(err.Error(), "doesn't look like a login name") {
+		t.Errorf("error = %q", err)
+	}
+}
+
+func TestLoadRejectsBadTOML(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	writeConfig(t, dir, `{{invalid`)
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for bad TOML")
+	}
+}
+
+func TestDisabledTailscaleAllowsNoAllowList(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	writeConfig(t, dir, `
+[tailscale]
+enabled = false
+`)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("disabled tailscale should not require allow list: %v", err)
+	}
+	if cfg.Tailscale.Enabled {
+		t.Error("should be disabled")
+	}
+}
+
+func writeConfig(t *testing.T, xdgDir, content string) {
+	t.Helper()
+	cfgDir := filepath.Join(xdgDir, "gmux")
+	os.MkdirAll(cfgDir, 0o755)
+	os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(content), 0o644)
 }
