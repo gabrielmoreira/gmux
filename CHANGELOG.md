@@ -2,14 +2,25 @@
 
 Full commit-level changelogs are on each [GitHub release](https://github.com/gmuxapp/gmux/releases). This file tracks user-facing highlights only.
 
+## Unreleased
+
+Sidebar redesign, file attribution fixes, integration tests.
+
+- **Sidebar split into live + resumable sections** — live sessions at top, "Resume previous" collapsible drawer for resumable sessions
+- **Simplified close button** — always ×; live sessions kill, resumable sessions dismiss
+- **Stale session cleanup** — dead runners detected and cleaned up automatically
+- **File attribution fixes** — single-candidate attribution now works correctly for pi; title derived from first user message even when the tool creates the file before user input
+- **Title from first user message** — adapters no longer emit title events on every message; initial title set once via file parsing
+- **`close_action` removed** — field was redundant; frontend derives behavior from `session.alive`
+- **`CommandTitler` interface** — optional adapter capability for custom fallback titles (shell shows `pytest -x` instead of "shell")
+- **WebGL terminal renderer** — switched from canvas to WebGL for better performance
+- **Integration tests** — end-to-end tests for pi, claude, codex, and shell that launch real tools through gmuxd
+- Fixed macOS "app is damaged" Gatekeeper prompt
+
 ## v0.2.4
 
 - File attribution refactored into adapter interface (`FileAttributor`)
 - Codex adapter now attributes session files
-
-## v0.2.4
-
-- Fixed "app is damaged" Gatekeeper prompt on macOS (xattr quarantine removal in cask postflight)
 
 ## v0.2.3
 

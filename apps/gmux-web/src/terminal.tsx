@@ -151,6 +151,17 @@ export function TerminalView({
     }
   }, [])
 
+  const cancelOwnershipResize = useCallback(() => {
+    if (ownershipResizeFrame1.current != null) {
+      cancelAnimationFrame(ownershipResizeFrame1.current)
+      ownershipResizeFrame1.current = null
+    }
+    if (ownershipResizeFrame2.current != null) {
+      cancelAnimationFrame(ownershipResizeFrame2.current)
+      ownershipResizeFrame2.current = null
+    }
+  }, [])
+
   // Fit terminal to container and send resize to runner via WS.
   // Only effective when we're the resize owner (proxy will drop otherwise).
   const fitAndResize = useCallback(() => {
@@ -161,8 +172,23 @@ export function TerminalView({
 
     fit.fit()
     const dims = sendResize(ws, fit, term)
-    setViewportSize(dims)
+    setViewportSize(dims ?? getProposedTerminalSize(fit))
   }, [])
+
+  // Ownership changes can remove the resize overlay, which changes the
+  // terminal's available height. Wait two animation frames so Preact can
+  // commit the DOM update and layout can settle before we measure.
+  const scheduleOwnershipResize = useCallback(() => {
+    cancelOwnershipResize()
+    ownershipResizeFrame1.current = requestAnimationFrame(() => {
+      ownershipResizeFrame1.current = null
+      ownershipResizeFrame2.current = requestAnimationFrame(() => {
+        ownershipResizeFrame2.current = null
+        if (!isResizeOwnerRef.current) return
+        fitAndResize()
+      })
+    })
+  }, [cancelOwnershipResize, fitAndResize])
 
   // Send claim_resize over WS to take resize ownership from another device.
   // The proxy confirms via resize_state, which triggers fit+resize after
@@ -258,6 +284,7 @@ export function TerminalView({
       window.removeEventListener('keydown', handleGlobalKeydown, true)
       window.removeEventListener('resize', onWindowResize)
       dataDisposable.dispose()
+      cancelOwnershipResize()
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
       wsRef.current?.close()
       wsRef.current = null
@@ -267,22 +294,28 @@ export function TerminalView({
       termRef.current = null
       fitRef.current = null
     }
-  }, [onCtrlConsumed, onInputReady])
+  }, [cancelOwnershipResize, onCtrlConsumed, onInputReady])
 
   // React to terminal_cols/terminal_rows changes from SSE when not the owner.
   useEffect(() => {
     if (!termRef.current || USE_MOCK) return
     if (isResizeOwner) {
-      // We're the owner — fit to our own viewport.
-      const fit = fitRef.current
-      if (fit) {
-        fit.fit()
-        setViewportSize(getProposedTerminalSize(fit))
-      }
-    } else {
-      applyPassiveTerminalSize()
+      // We're the owner — wait for layout to settle before measuring.
+      scheduleOwnershipResize()
+      return () => cancelOwnershipResize()
     }
-  }, [session.id, session.terminal_cols, session.terminal_rows, isResizeOwner, applyPassiveTerminalSize])
+
+    cancelOwnershipResize()
+    applyPassiveTerminalSize()
+  }, [
+    session.id,
+    session.terminal_cols,
+    session.terminal_rows,
+    isResizeOwner,
+    applyPassiveTerminalSize,
+    cancelOwnershipResize,
+    scheduleOwnershipResize,
+  ])
 
   // WebSocket connection (reconnects when session.id changes).
   useEffect(() => {
@@ -332,20 +365,8 @@ export function TerminalView({
               const nowOwner = !!msg.is_owner
               isResizeOwnerRef.current = nowOwner
               setIsResizeOwner(nowOwner)
-              if (nowOwner) {
-                // We just became the owner — fit to our viewport and resize.
-                // Defer to next frame so React can flush the DOM first
-                // (e.g. removing the resize overlay that takes up space).
-                requestAnimationFrame(() => {
-                  const f = fitRef.current
-                  const t = termRef.current
-                  if (f && t) {
-                    f.fit()
-                    sendResize(wsRef.current, f, t)
-                    setViewportSize(getProposedTerminalSize(f))
-                  }
-                })
-              } else {
+              if (!nowOwner) {
+                cancelOwnershipResize()
                 // Not the owner — resize xterm to match the PTY immediately
                 // using the dimensions included in the control message.
                 const t = termRef.current
