@@ -93,11 +93,13 @@ These are computed in `Upsert()`, never set manually:
 
 | Field | Derivation |
 |---|---|
-| `title` | `adapter_title` > `shell_title` > command basename |
+| `title` | `adapter_title` > `shell_title` > command basename (see below) |
 | `resumable` | `!alive && resume-capable kind && has resume_key && has command` |
 | `close_action` | `"minimize"` if alive + resume-capable kind + has resume_key, else `"dismiss"` |
 
 A session is only resume-capable if its adapter implements the `Resumer` interface. The set of resume-capable kinds is built from the compiled adapter set at startup.
+
+**Title priority:** `adapter_title` always wins over `shell_title`. An empty `adapter_title` from the runner never overwrites a non-empty one on the daemon — this preserves titles across resume, where the daemon knows the title from file attribution but the freshly-started runner doesn't yet.
 
 `resume_key` is set during file attribution — not at session creation. A session from a resumable adapter that exits before creating a file (e.g. opened and immediately closed) gets `close_action: "dismiss"` and is not resumable.
 

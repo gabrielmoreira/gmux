@@ -177,12 +177,17 @@ func (s *State) SetSubtitle(subtitle string) {
 }
 
 func (s *State) emitMetaLocked() {
-	s.emit(Event{Type: "meta", Data: map[string]string{
-		"title":         s.titleLocked(),
-		"shell_title":   s.ShellTitle,
-		"adapter_title": s.AdapterTitle,
-		"subtitle":      s.Subtitle,
-	}})
+	data := map[string]string{
+		"title":       s.titleLocked(),
+		"shell_title": s.ShellTitle,
+	}
+	if s.AdapterTitle != "" {
+		data["adapter_title"] = s.AdapterTitle
+	}
+	if s.Subtitle != "" {
+		data["subtitle"] = s.Subtitle
+	}
+	s.emit(Event{Type: "meta", Data: data})
 }
 
 // MarshalJSON produces JSON with a computed "title" field.

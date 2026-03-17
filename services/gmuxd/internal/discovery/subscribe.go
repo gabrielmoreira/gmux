@@ -184,7 +184,7 @@ func (sub *Subscriptions) handleEvent(sessionID, socketPath, eventType string, d
 		if meta.ShellTitle != nil {
 			sess.ShellTitle = *meta.ShellTitle
 		}
-		if meta.AdapterTitle != nil {
+		if meta.AdapterTitle != nil && *meta.AdapterTitle != "" {
 			sess.AdapterTitle = *meta.AdapterTitle
 		}
 		if meta.Subtitle != nil {
