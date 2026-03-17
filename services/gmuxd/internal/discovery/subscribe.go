@@ -21,6 +21,9 @@ type Subscriptions struct {
 	mu     sync.Mutex
 	active map[string]context.CancelFunc // sessionID → cancel
 	store  *store.Store
+	// OnExit is called after a session exit event is processed.
+	// Used to transition resumable sessions immediately on exit.
+	OnExit func(sess *store.Session)
 }
 
 func NewSubscriptions(s *store.Store) *Subscriptions {
@@ -207,6 +210,10 @@ func (sub *Subscriptions) handleEvent(sessionID, socketPath, eventType string, d
 			sess.Status = &store.Status{Label: "completed"}
 		} else {
 			sess.Status = &store.Status{Label: fmt.Sprintf("exited (%d)", exit.ExitCode)}
+		}
+		// Let the OnExit hook transition resumable sessions before upsert.
+		if sub.OnExit != nil {
+			sub.OnExit(&sess)
 		}
 		sub.store.Upsert(sess)
 

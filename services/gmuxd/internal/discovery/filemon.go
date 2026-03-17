@@ -222,6 +222,50 @@ func (fm *FileMonitor) NotifyNewSession(sessionID string) {
 	}
 }
 
+// ResolveResume checks if a session has an attributed file and a resumable
+// adapter. If so, it populates the session's Resumable, ResumeKey, and
+// Command fields so the session transitions to resumable immediately on exit.
+func (fm *FileMonitor) ResolveResume(sess *store.Session) {
+	fm.mu.Lock()
+	defer fm.mu.Unlock()
+
+	// Find the attributed file for this session.
+	var filePath string
+	for path, sid := range fm.attributions {
+		if sid == sess.ID {
+			filePath = path
+			break
+		}
+	}
+	if filePath == "" {
+		return
+	}
+
+	a := findAdapter(sess.Kind)
+	if a == nil {
+		return
+	}
+
+	sf, ok := a.(adapter.SessionFiler)
+	if !ok {
+		return
+	}
+	resumer, ok := a.(adapter.Resumer)
+	if !ok {
+		return
+	}
+
+	info, err := sf.ParseSessionFile(filePath)
+	if err != nil || !resumer.CanResume(filePath) {
+		return
+	}
+
+	sess.Resumable = true
+	sess.ResumeKey = info.ID
+	sess.Command = resumer.ResumeCommand(info)
+	sess.Status = nil // clear exit status for clean resumable display
+}
+
 // NotifySessionDied removes a session from monitoring.
 func (fm *FileMonitor) NotifySessionDied(sessionID string) {
 	fm.mu.Lock()

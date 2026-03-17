@@ -165,6 +165,13 @@ func main() {
 	// Start file monitor — watches adapter session directories with inotify
 	// to extract title and working status from JSONL files.
 	fileMon := discovery.NewFileMonitor(sessions)
+
+	// When a session exits, immediately transition it to resumable if
+	// the adapter supports it. This avoids the "exited" limbo state —
+	// the session becomes clickable to resume right away.
+	subs.OnExit = func(sess *store.Session) {
+		fileMon.ResolveResume(sess)
+	}
 	stopFileMon := make(chan struct{})
 	go fileMon.Run(stopFileMon)
 	defer close(stopFileMon)
