@@ -14,6 +14,7 @@ Sidebar redesign, file attribution fixes, integration tests.
 - **`close_action` removed** — field was redundant; frontend derives behavior from `session.alive`
 - **`CommandTitler` interface** — optional adapter capability for custom fallback titles (shell shows `pytest -x` instead of "shell")
 - **WebGL terminal renderer** — switched from canvas to WebGL for better performance
+- **Terminal resize handoff polish** — the "sized for another device" hint is now a compact floating pill and no longer affects terminal height when taking resize ownership
 - **Integration tests** — end-to-end tests for pi, claude, codex, and shell that launch real tools through gmuxd
 - Fixed macOS "app is damaged" Gatekeeper prompt
 

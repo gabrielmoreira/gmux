@@ -151,17 +151,6 @@ export function TerminalView({
     }
   }, [])
 
-  const cancelOwnershipResize = useCallback(() => {
-    if (ownershipResizeFrame1.current != null) {
-      cancelAnimationFrame(ownershipResizeFrame1.current)
-      ownershipResizeFrame1.current = null
-    }
-    if (ownershipResizeFrame2.current != null) {
-      cancelAnimationFrame(ownershipResizeFrame2.current)
-      ownershipResizeFrame2.current = null
-    }
-  }, [])
-
   // Fit terminal to container and send resize to runner via WS.
   // Only effective when we're the resize owner (proxy will drop otherwise).
   const fitAndResize = useCallback(() => {
@@ -175,24 +164,8 @@ export function TerminalView({
     setViewportSize(dims ?? getProposedTerminalSize(fit))
   }, [])
 
-  // Ownership changes can remove the resize overlay, which changes the
-  // terminal's available height. Wait two animation frames so Preact can
-  // commit the DOM update and layout can settle before we measure.
-  const scheduleOwnershipResize = useCallback(() => {
-    cancelOwnershipResize()
-    ownershipResizeFrame1.current = requestAnimationFrame(() => {
-      ownershipResizeFrame1.current = null
-      ownershipResizeFrame2.current = requestAnimationFrame(() => {
-        ownershipResizeFrame2.current = null
-        if (!isResizeOwnerRef.current) return
-        fitAndResize()
-      })
-    })
-  }, [cancelOwnershipResize, fitAndResize])
-
   // Send claim_resize over WS to take resize ownership from another device.
-  // The proxy confirms via resize_state, which triggers fit+resize after
-  // React removes the overlay from the DOM.
+  // The proxy confirms via resize_state; once ownership flips we fit+resize.
   const claimResize = useCallback(() => {
     const ws = wsRef.current
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -284,7 +257,6 @@ export function TerminalView({
       window.removeEventListener('keydown', handleGlobalKeydown, true)
       window.removeEventListener('resize', onWindowResize)
       dataDisposable.dispose()
-      cancelOwnershipResize()
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
       wsRef.current?.close()
       wsRef.current = null
@@ -294,28 +266,22 @@ export function TerminalView({
       termRef.current = null
       fitRef.current = null
     }
-  }, [cancelOwnershipResize, onCtrlConsumed, onInputReady])
+  }, [onCtrlConsumed, onInputReady])
 
   // React to terminal_cols/terminal_rows changes from SSE when not the owner.
   useEffect(() => {
     if (!termRef.current || USE_MOCK) return
-    if (isResizeOwner) {
-      // We're the owner — wait for layout to settle before measuring.
-      scheduleOwnershipResize()
-      return () => cancelOwnershipResize()
+    if (!isResizeOwner) {
+      applyPassiveTerminalSize()
+      return
     }
 
-    cancelOwnershipResize()
-    applyPassiveTerminalSize()
-  }, [
-    session.id,
-    session.terminal_cols,
-    session.terminal_rows,
-    isResizeOwner,
-    applyPassiveTerminalSize,
-    cancelOwnershipResize,
-    scheduleOwnershipResize,
-  ])
+    const frame = requestAnimationFrame(() => {
+      if (!isResizeOwnerRef.current) return
+      fitAndResize()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [session.id, session.terminal_cols, session.terminal_rows, isResizeOwner, applyPassiveTerminalSize, fitAndResize])
 
   // WebSocket connection (reconnects when session.id changes).
   useEffect(() => {
@@ -366,7 +332,6 @@ export function TerminalView({
               isResizeOwnerRef.current = nowOwner
               setIsResizeOwner(nowOwner)
               if (!nowOwner) {
-                cancelOwnershipResize()
                 // Not the owner — resize xterm to match the PTY immediately
                 // using the dimensions included in the control message.
                 const t = termRef.current
@@ -435,24 +400,23 @@ export function TerminalView({
   }
 
   return (
-    <>
+    <div class="terminal-shell">
+      <div ref={containerRef} class="terminal-container" />
       {showResizeOverlay && (
-        <div class="terminal-resize-overlay">
-          <span>This terminal is sized for another device.</span>
-          <button class="terminal-resize-overlay-btn" onClick={() => claimResize()}>
-            Resize for this device
-          </button>
+        <button
+          type="button"
+          class="terminal-resize-overlay"
+          onClick={() => claimResize()}
+        >
+          Sized for another device, click to resize
+        </button>
+      )}
+      {termLoading && (
+        <div class="terminal-loading">
+          Waiting for output…
         </div>
       )}
-      <div class="terminal-shell">
-        <div ref={containerRef} class="terminal-container" />
-        {termLoading && (
-          <div class="terminal-loading">
-            Waiting for output…
-          </div>
-        )}
-      </div>
-    </>
+    </div>
   )
 }
 
