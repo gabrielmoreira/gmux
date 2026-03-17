@@ -25,7 +25,7 @@ description: The session metadata model shared between gmux, gmuxd, and the web 
 | `created_at` | ISO 8601 | When the session was created |
 | `command` | string[] | The command being run |
 | `cwd` | string | Working directory |
-| `kind` | string | Adapter kind: `"shell"`, `"pi"`, `"opencode"`, etc. |
+| `kind` | string | Adapter kind: `"shell"`, `"claude"`, `"codex"`, `"pi"`, etc. |
 
 ### Process State (owned by gmux, authoritative)
 
@@ -36,6 +36,15 @@ description: The session metadata model shared between gmux, gmuxd, and the web 
 | `exit_code` | number \| null | Exit code when dead, null when alive |
 | `started_at` | ISO 8601 | When the process was started |
 | `exited_at` | ISO 8601 \| null | When the process exited |
+
+### Resume (derived by gmuxd)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `resumable` | boolean | Derived: `!alive && resume-capable kind && command present`. Never set manually. |
+| `resume_key` | string \| null | Session file ID, set during file attribution. Used to deduplicate live sessions against file-discovered entries. |
+| `close_action` | string | Derived: `"minimize"` for alive resume-capable sessions, `"dismiss"` otherwise. Controls the close button (− vs ×). |
+| `command` | string[] | For resumable dead sessions, this is the resume command (e.g. `["claude", "--resume", "abc"]`). For alive sessions, the original launch command. |
 
 ### Display (set by child or gmux, mutable)
 

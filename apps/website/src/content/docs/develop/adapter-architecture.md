@@ -188,21 +188,32 @@ After attribution, `gmuxd` can continue watching the file:
 
 That is how file-backed tools can update titles or other metadata in real time even when those changes never appear in terminal output.
 
-## Resumable session discovery
+## Resumable sessions
 
-For adapters that implement both `SessionFiler` and `Resumer`, `gmuxd` can surface non-running sessions in the sidebar.
+For adapters that implement `Resumer`, sessions transition seamlessly between alive and resumable states.
 
-Typical flow:
+### Live → resumable transition
+
+When a session exits, `gmuxd` checks whether its adapter implements `Resumer` and whether the session has an attributed file (identified by `resume_key`, set during file attribution). If so:
+
+1. the resume command is derived from the adapter's `ResumeCommand()`
+2. `command` is set to the resume command
+3. `resumable` is derived automatically (`!alive && resume-capable kind && command present`)
+4. the session appears in the sidebar as clickable to resume — no intermediate "exited" state
+
+### File-discovered sessions
+
+For adapters that implement both `SessionFiler` and `Resumer`, `gmuxd` also discovers sessions from files on disk (e.g. from before the daemon started):
 
 1. enumerate files under `SessionRootDir()` / known `SessionDir(cwd)` directories
 2. filter them with `CanResume(path)`
 3. parse them with `ParseSessionFile(path)`
-4. deduplicate them against live sessions by resume key / file identity
+4. deduplicate them against live sessions by resume key
 5. publish them as resumable entries
 
 When the user resumes one, `gmuxd` uses `ResumeCommand()` to launch the new live session.
 
-For a concrete example, see [pi](/integrations/pi).
+For concrete examples, see [Claude Code](/integrations/claude-code), [Codex](/integrations/codex), or [pi](/integrations/pi).
 
 ## Child awareness protocol
 
@@ -255,6 +266,8 @@ The important design point is that adapters do not own the whole session model. 
 ## Built-in examples
 
 - **Shell**: fallback adapter; watches terminal title escape sequences and contributes the default shell launcher
+- **Claude Code**: file-backed adapter; supports launch presets, status detection, title extraction, live file updates, and resume
+- **Codex**: file-backed adapter with date-nested session storage; supports launch presets, status detection, title extraction, and resume
 - **pi**: file-backed adapter; supports launch presets, status detection, title extraction, live file updates, and resume
 
-See [Adapters](/adapters) for the high-level overview and [pi](/integrations/pi) for the concrete integration behavior.
+See [Adapters](/adapters) for the high-level overview and the [Integrations](/integrations/claude-code) section for concrete integration behavior.

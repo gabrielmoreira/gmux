@@ -27,16 +27,16 @@ The working/idle detection comes from [adapters](/adapters). Without a specific 
 |--------|-------|-----------------|
 | Normal text | Running | Click to attach, use the terminal |
 | Dimmed text | Exited (not resumable) | Dismiss with × |
-| Normal text, not alive | Resumable | Click to resume (e.g. pi sessions) |
+| Normal text, not alive | Resumable | Click to resume |
 
 ### Close buttons
 
 Hover over a session to reveal the close button:
 
 - **×** (dismiss) — kills the process and removes it from the sidebar
-- **−** (minimize) — kills the process but keeps it as a resumable entry (for tools like pi that can resume from their session files)
+- **−** (minimize) — kills the process and transitions it to a resumable entry. Click it again to resume where you left off.
 
-Which button appears depends on the adapter. Plain shell sessions get ×, pi sessions get −.
+Which button appears depends on the adapter. Plain shell sessions get ×, sessions from resumable adapters (Claude Code, Codex, pi) get −.
 
 ## The terminal
 
