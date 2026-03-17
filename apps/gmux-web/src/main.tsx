@@ -1301,7 +1301,7 @@ function App() {
   // Selected = what the terminal shows. No terminal → deselect.
   useEffect(() => {
     if (!canAttach) setCtrlArmed(false)
-    if (selectedId && selected && !selected.alive) {
+    if (selectedId && (!selected || !selected.alive)) {
       setSelectedId(null)
     }
   }, [canAttach, selectedId, selected])

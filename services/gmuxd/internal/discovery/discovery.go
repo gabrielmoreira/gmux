@@ -92,7 +92,11 @@ func Scan(sessions *store.Store, subs *Subscriptions, fileMon *FileMonitor, resu
 			continue // already tracked
 		}
 		if err := Register(sessions, subs, fileMon, sockPath, resumes); err != nil {
-			os.Remove(sockPath) // unreachable — clean up stale socket
+			// Only remove sockets old enough to be genuinely stale.
+			// A brand-new socket may not be listening yet (runner still starting).
+			if info, serr := entry.Info(); serr == nil && time.Since(info.ModTime()) > 10*time.Second {
+				os.Remove(sockPath)
+			}
 		}
 	}
 
