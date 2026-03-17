@@ -165,15 +165,26 @@ For adapters that implement `SessionFiler`, `gmuxd` does more than just scan fil
 
 ### Session file attribution
 
-When a tool starts writing files in a working directory, `gmuxd` needs to figure out which running session owns which file.
+When a tool starts writing files in a watched directory, `gmuxd` needs to figure out which running session owns which file. Adapters control this by implementing `FileAttributor`:
+
+```go
+type FileAttributor interface {
+    AttributeFile(filePath string, candidates []FileCandidate) string
+}
+```
+
+Each candidate carries `SessionID`, `Cwd`, `StartedAt`, and `Scrollback` (recent terminal text). The adapter decides how to match:
+
+- **pi** uses content similarity between the file text and terminal scrollback
+- **claude** and **codex** use metadata matching (cwd + timestamp proximity from the file's session header)
 
 Typical flow:
 
-1. watch the adapter's `SessionDir(cwd)`
+1. watch the adapter's `SessionDir(cwd)` via inotify
 2. notice file creation or writes
-3. if only one live session matches that cwd, attribute the file directly
-4. if multiple sessions share the cwd, use content-based matching
-5. once attributed, keep the association sticky until a different file clearly takes over
+3. call the adapter's `AttributeFile` to match the file to a live session
+4. once attributed, keep the association sticky
+5. track the **active file** per session — when a different file is attributed (e.g. the user runs `/new` or `/resume` in the tool's TUI), `resume_key` updates to the new file's session ID
 
 This is what lets gmux connect a running session to a later-created conversation file.
 

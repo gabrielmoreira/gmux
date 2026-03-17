@@ -176,6 +176,22 @@ type FileMonitor interface {
 
 Implement this if appended file content should update the live sidebar. Return `FileEvent` values with a `Title` or `Status`.
 
+### `FileAttributor`
+
+```go
+type FileAttributor interface {
+    AttributeFile(filePath string, candidates []FileCandidate) string
+}
+```
+
+Implement this if multiple live sessions can share the same watch directory. The daemon calls this to determine which session owns a newly written file. Each candidate carries `SessionID`, `Cwd`, `StartedAt`, and `Scrollback` (recent terminal text). Return the matching session ID, or `""` to reject the file.
+
+Common strategies:
+- **Metadata matching** (codex, claude): parse the file header for cwd + timestamp, pick the candidate with the closest `StartedAt`
+- **Content similarity** (pi): compare file text against each candidate's `Scrollback`
+
+Without this interface, single-candidate directories use trivial attribution and multi-candidate directories fall back to the first candidate.
+
 ### `Resumer`
 
 ```go
@@ -196,12 +212,12 @@ A session only becomes resumable once a file is attributed to it (setting `resum
 
 An adapter implements only what it needs:
 
-| Adapter | Base (`Discover`/`Match`/`Env`/`Monitor`) | Launchable | SessionFiler | FileMonitor | Resumer |
-|---------|------|------------|-------------|-------------|---------|
-| Shell | ✓ | ✓ | — | — | — |
-| Claude | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Codex | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Pi | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Adapter | Base (`Discover`/`Match`/`Env`/`Monitor`) | Launchable | SessionFiler | FileMonitor | FileAttributor | Resumer |
+|---------|------|------------|-------------|-------------|----------------|---------|
+| Shell | ✓ | ✓ | — | — | — | — |
+| Claude | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Codex | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Pi | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 ## Testing
 

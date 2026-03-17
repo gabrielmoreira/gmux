@@ -229,27 +229,26 @@ func (fm *FileMonitor) NotifyNewSession(sessionID string) {
 	fm.addWatchLocked(dir)
 	log.Printf("filemon: watching %s for session %s (kind=%s)", dir, sessionID, sess.Kind)
 
-	// Eagerly scan for files modified after the session started. This catches
-	// files written before the watch was set up (e.g. gmuxd restart, or file
-	// written between launch and watch registration). We filter by session
-	// start time to avoid attributing old files from previous sessions.
-	startedAt, _ := time.Parse(time.RFC3339, sess.StartedAt)
+	// Eagerly scan for the most recently modified file. This catches files
+	// written before the watch was set up (e.g. gmuxd restart, or file
+	// written between launch and watch registration). Attribution logic
+	// in the adapter handles matching by cwd + timestamp proximity.
 	fm.mu.Unlock()
-	fm.scanDirForRecentFiles(dir, startedAt)
+	fm.scanDirMostRecent(dir)
 	fm.mu.Lock()
 }
 
-// scanDirForRecentFiles finds .jsonl files modified after notBefore and
-// processes them. This catches files written before the watch was set up
-// (e.g. gmuxd restart) without attributing old session files.
-func (fm *FileMonitor) scanDirForRecentFiles(dir string, notBefore time.Time) {
-	if notBefore.IsZero() {
-		return
-	}
+// scanDirMostRecent processes the most recently modified .jsonl file in a
+// directory. This catches files written before the watch was set up (e.g.
+// gmuxd restart). Only the newest file is tried — the adapter's
+// AttributeFile decides if it matches a live session (by cwd + timestamp).
+func (fm *FileMonitor) scanDirMostRecent(dir string) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
+	var newest string
+	var newestMod time.Time
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
 			continue
@@ -258,12 +257,13 @@ func (fm *FileMonitor) scanDirForRecentFiles(dir string, notBefore time.Time) {
 		if err != nil {
 			continue
 		}
-		// Only process files modified after the session started (with margin
-		// for clock skew between session start and file creation).
-		if info.ModTime().Before(notBefore.Add(-30 * time.Second)) {
-			continue
+		if info.ModTime().After(newestMod) {
+			newestMod = info.ModTime()
+			newest = filepath.Join(dir, e.Name())
 		}
-		fm.handleFileChange(filepath.Join(dir, e.Name()))
+	}
+	if newest != "" {
+		fm.handleFileChange(newest)
 	}
 }
 
@@ -458,13 +458,10 @@ func (fm *FileMonitor) attributeFileLocked(dir, filePath string) string {
 		return ""
 	}
 
-	// Trivial: single session for this directory.
-	if len(candidates) == 1 {
-		fm.attributions[filePath] = candidates[0].id
-		return candidates[0].id
-	}
-
-	// Multiple sessions — delegate to the adapter's FileAttributor if available.
+	// Delegate to the adapter's FileAttributor if available.
+	// Even single-candidate cases go through the adapter to validate
+	// that the file actually belongs to this session (e.g. checking
+	// cwd + timestamp proximity prevents attributing old files).
 	attr, hasAttr := candidates[0].adapter.(adapter.FileAttributor)
 	if hasAttr {
 		fileCandidates := make([]adapter.FileCandidate, len(candidates))
@@ -476,16 +473,19 @@ func (fm *FileMonitor) attributeFileLocked(dir, filePath string) string {
 			if sess, ok := fm.store.Get(ms.id); ok {
 				fc.StartedAt, _ = time.Parse(time.RFC3339, sess.StartedAt)
 			}
-			fc.Scrollback = fetchScrollbackText(ms.socketPath)
+			if len(candidates) > 1 {
+				fc.Scrollback = fetchScrollbackText(ms.socketPath)
+			}
 			fileCandidates[i] = fc
 		}
 		if id := attr.AttributeFile(filePath, fileCandidates); id != "" {
 			fm.attributions[filePath] = id
 			return id
 		}
+		return "" // adapter rejected the file
 	}
 
-	// Fallback: first candidate.
+	// No FileAttributor — trivial attribution to first candidate.
 	fm.attributions[filePath] = candidates[0].id
 	return candidates[0].id
 }

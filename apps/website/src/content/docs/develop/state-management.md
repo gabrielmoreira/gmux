@@ -48,8 +48,8 @@ This means discovery can never race with Register to create duplicate sessions.
 
 Watches adapter session directories with inotify. When a `.jsonl` file is written:
 
-1. Attributes the file to a live session (single session per directory = trivial; multiple = content similarity matching)
-2. Sets `resume_key` on first attribution — this is what makes a session resumable later
+1. Attributes the file to a live session via the adapter's `FileAttributor` interface (pi uses scrollback similarity; claude and codex use cwd + timestamp proximity)
+2. Tracks the **active file** per session — when a different file is attributed (e.g. `/new` or `/resume` in the tool's TUI), the `resume_key` updates to the new file's session ID
 3. Feeds new lines to the adapter's `ParseNewLines()` for title and status updates
 
 ### Scanner: file-discovered sessions
