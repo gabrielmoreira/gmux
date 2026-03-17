@@ -996,13 +996,13 @@ function EmptyState({ launchers, health }: { launchers: LauncherDef[]; health: H
       )}
       <div class="empty-state-footer">
         <div class="empty-state-meta">
-          or <code>gmux {'<command>'}</code> from terminal
+          or <code>gmux {'<command>'}</code> from any terminal
         </div>
         <div class="empty-state-meta">
-          <span>{location.host}</span>
+          <span>http://{location.host}</span>
           {tailscaleURL && <>
             <span class="empty-state-dot" />
-            <span>{maskTailnet(tailscaleURL).replace('https://', '')}</span>
+            <span>{maskTailnet(tailscaleURL)}</span>
           </>}
         </div>
       </div>
