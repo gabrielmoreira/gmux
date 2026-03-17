@@ -1149,17 +1149,10 @@ function App() {
       const allSessions = mockFolders.flatMap(f => f.sessions)
       setSessions(allSessions)
       setConnState('connected')
-      // Auto-select first alive session
-      const first = allSessions.find(s => s.alive)
-      if (first) setSelectedId(first.id)
     } else {
-      // Fetch initial session list
       fetchSessions().then(list => {
         setSessions(list)
         setConnState('connected')
-        // Auto-select first alive session
-        const first = list.find(s => s.alive)
-        if (first && !selectedId) setSelectedId(first.id)
       }).catch(err => {
         console.error('Failed to fetch sessions:', err)
         setConnState('error')
@@ -1240,15 +1233,12 @@ function App() {
     return s
   }, [sessions, selectedId])
 
-  // Auto-select only when nothing is selected (initial load).
-  // When a selected session dies, we let the user decide — don't override their click.
+  // Auto-select: pick first attachable session on initial load.
   const hasAutoSelected = useRef(false)
   useEffect(() => {
     if (!selectedId && !hasAutoSelected.current && filteredSessions.length > 0) {
       hasAutoSelected.current = true
-      // Only auto-select alive sessions — dead/resumable sessions
-      // are selected by explicit click only.
-      const best = filteredSessions.find(s => s.alive)
+      const best = filteredSessions.find(s => s.alive && s.socket_path)
       if (best) setSelectedId(best.id)
     }
   }, [filteredSessions, selectedId])
