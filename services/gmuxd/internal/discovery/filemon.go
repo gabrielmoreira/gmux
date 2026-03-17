@@ -114,6 +114,7 @@ func (fm *FileMonitor) Run(stop <-chan struct{}) {
 // handleFSEvent dispatches a single fsnotify event.
 func (fm *FileMonitor) handleFSEvent(event fsnotify.Event) {
 	name := event.Name
+	log.Printf("filemon: event %s %s", event.Op, name)
 
 	if event.Has(fsnotify.Create) {
 		// A new entry was created. Could be:
@@ -214,11 +215,54 @@ func (fm *FileMonitor) NotifyNewSession(sessionID string) {
 		return
 	}
 
-	if _, err := os.Stat(dir); err == nil {
-		fm.addWatchLocked(dir)
-	} else {
-		// Directory doesn't exist yet — wait for it.
-		fm.pendingDirs[dir] = append(fm.pendingDirs[dir], sessionID)
+	// Ensure the directory exists. For adapters with date-nested layouts
+	// (e.g. Codex: YYYY/MM/DD), the leaf dir may not exist yet. Creating
+	// it is harmless and avoids complex multi-level pending watch logic.
+	if _, err := os.Stat(dir); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			log.Printf("filemon: mkdir %s: %v", dir, err)
+			fm.pendingDirs[dir] = append(fm.pendingDirs[dir], sessionID)
+			return
+		}
+	}
+	fm.addWatchLocked(dir)
+	log.Printf("filemon: watching %s for session %s (kind=%s)", dir, sessionID, sess.Kind)
+
+	// Eagerly scan for files modified after the session started. This catches
+	// files written before the watch was set up (e.g. gmuxd restart, or file
+	// written between launch and watch registration). We filter by session
+	// start time to avoid attributing old files from previous sessions.
+	startedAt, _ := time.Parse(time.RFC3339, sess.StartedAt)
+	fm.mu.Unlock()
+	fm.scanDirForRecentFiles(dir, startedAt)
+	fm.mu.Lock()
+}
+
+// scanDirForRecentFiles finds .jsonl files modified after notBefore and
+// processes them. This catches files written before the watch was set up
+// (e.g. gmuxd restart) without attributing old session files.
+func (fm *FileMonitor) scanDirForRecentFiles(dir string, notBefore time.Time) {
+	if notBefore.IsZero() {
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		// Only process files modified after the session started (with margin
+		// for clock skew between session start and file creation).
+		if info.ModTime().Before(notBefore.Add(-30 * time.Second)) {
+			continue
+		}
+		fm.handleFileChange(filepath.Join(dir, e.Name()))
 	}
 }
 
@@ -317,8 +361,10 @@ func (fm *FileMonitor) handleFileChange(path string) {
 	if !attributed {
 		sessionID = fm.attributeFileLocked(dir, path)
 		if sessionID == "" {
+			log.Printf("filemon: no attribution for %s (no candidates in dir %s)", filepath.Base(path), dir)
 			return
 		}
+		log.Printf("filemon: attributed %s → %s", filepath.Base(path), sessionID)
 
 		// First attribution: set ResumeKey on the live session so it
 		// can transition to resumable seamlessly when it exits.
@@ -326,6 +372,7 @@ func (fm *FileMonitor) handleFileChange(path string) {
 			if info, err := ms.filer.ParseSessionFile(path); err == nil && info.ID != "" {
 				if sess, ok := fm.store.Get(sessionID); ok && sess.ResumeKey == "" {
 					sess.ResumeKey = info.ID
+					log.Printf("filemon: set resume_key=%s on %s", info.ID, sessionID)
 					fm.store.Upsert(sess)
 				}
 			}
@@ -393,9 +440,44 @@ func (fm *FileMonitor) attributeFileLocked(dir, filePath string) string {
 		return candidates[0].id
 	}
 
-	// Multiple sessions — content similarity matching.
+	// Multiple sessions — try metadata matching first (works for all adapters),
+	// then fall back to content similarity.
+
+	// Strategy 1: Parse the file's session header for cwd + timestamp and match
+	// against live sessions. Works for any adapter whose ParseSessionFile returns
+	// Cwd and Created (e.g. Codex, where all sessions share today's date dir).
+	if info, err := candidates[0].filer.ParseSessionFile(filePath); err == nil && info.Cwd != "" {
+		var metaBestID string
+		var metaBestDelta time.Duration = 1<<63 - 1
+		for _, ms := range candidates {
+			if ms.cwd != info.Cwd {
+				continue
+			}
+			sess, ok := fm.store.Get(ms.id)
+			if !ok {
+				continue
+			}
+			startedAt, err := time.Parse(time.RFC3339, sess.StartedAt)
+			if err != nil {
+				continue
+			}
+			delta := info.Created.Sub(startedAt).Abs()
+			if delta < metaBestDelta {
+				metaBestDelta = delta
+				metaBestID = ms.id
+			}
+		}
+		if metaBestID != "" && metaBestDelta < 5*time.Minute {
+			fm.attributions[filePath] = metaBestID
+			return metaBestID
+		}
+	}
+
+	// Strategy 2: Content similarity matching (scrollback vs file tail).
 	fileText, err := adapters.ExtractPiText(filePath)
 	if err != nil || fileText == "" {
+		// Can't extract — fall back to first candidate but still store it.
+		fm.attributions[filePath] = candidates[0].id
 		return candidates[0].id
 	}
 	fileTail := tail(fileText, 500)

@@ -79,11 +79,16 @@ func (c *Codex) SessionRootDir() string {
 	return filepath.Join(home, ".codex", "sessions")
 }
 
-// SessionDir returns the session root — Codex organizes by date, not by
-// cwd, so all sessions live under the same root tree regardless of cwd.
-// The scanner uses ListSessionFiles() instead of per-cwd enumeration.
+// SessionDir returns today's date-nested directory where Codex writes new
+// session files. Codex organizes by date (YYYY/MM/DD), not by cwd.
+// The scanner uses ListSessionFiles() for historical sessions across all dates.
 func (c *Codex) SessionDir(_ string) string {
-	return c.SessionRootDir()
+	root := c.SessionRootDir()
+	if root == "" {
+		return ""
+	}
+	now := time.Now()
+	return filepath.Join(root, now.Format("2006"), now.Format("01"), now.Format("02"))
 }
 
 // ListSessionFiles walks the date-nested directory tree
