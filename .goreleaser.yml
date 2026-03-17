@@ -72,11 +72,10 @@ homebrew_casks:
     binaries:
       - gmux
       - gmuxd
-    caveats: |
-      Launch a session:
-        gmux claude           # coding agent
-        gmux pytest -x        # test runner
-        gmux make build       # any command
-
-      Open the dashboard:
-        open http://localhost:8790
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/gmux"]
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/gmuxd"]
+          end

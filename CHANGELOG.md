@@ -7,6 +7,10 @@ Full commit-level changelogs are on each [GitHub release](https://github.com/gmu
 - File attribution refactored into adapter interface (`FileAttributor`)
 - Codex adapter now attributes session files
 
+## v0.2.4
+
+- Fixed "app is damaged" Gatekeeper prompt on macOS (xattr quarantine removal in cask postflight)
+
 ## v0.2.3
 
 - Fixed Homebrew tap (was empty after cleanup)
