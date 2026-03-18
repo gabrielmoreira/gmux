@@ -147,7 +147,7 @@ func launchGmux(gmuxBin string, command []string, cwd string) (int, error) {
 }
 
 func printUsage(w io.Writer) {
-	_, _ = fmt.Fprintf(w, "Usage: gmuxd <command> [options]\n\nCommands:\n  start [--replace]  Start the gmux daemon\n  shutdown           Ask the running gmux daemon to stop\n  version            Show gmuxd version\n  help               Show this help\n\nTip:\n  gmux <command>     Run a command; gmux auto-starts gmuxd if needed\n  More help: https://gmux.app\n")
+	_, _ = fmt.Fprintf(w, "gmuxd %s\n\nUsage: gmuxd <command> [options]\n\nCommands:\n  start [--replace]  Start the gmux daemon\n  shutdown           Ask the running gmux daemon to stop\n  version            Show gmuxd version\n  help               Show this help\n\nTip:\n  gmux <command>     Run a command; gmux auto-starts gmuxd if needed\n  More help: https://gmux.app\n", version)
 }
 
 func daemonAddr() (string, error) {
