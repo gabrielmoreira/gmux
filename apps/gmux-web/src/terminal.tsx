@@ -10,15 +10,11 @@ import type { Session } from './types'
 
 // ── Config ──
 
-const SEARCH = new URLSearchParams(location.search)
-const USE_MOCK = import.meta.env.VITE_MOCK === '1' || SEARCH.has('mock')
-const USE_WEBGL = SEARCH.get('renderer') !== 'canvas'
-const PRESERVE_WEBGL_DRAWING_BUFFER = SEARCH.has('preserveDrawingBuffer') || SEARCH.has('screenshot')
+const USE_MOCK = import.meta.env.VITE_MOCK === '1' || location.search.includes('mock')
 
 function loadPreferredRenderer(term: Terminal) {
-  if (!USE_WEBGL) return
   try {
-    term.loadAddon(new WebglAddon({ preserveDrawingBuffer: PRESERVE_WEBGL_DRAWING_BUFFER }))
+    term.loadAddon(new WebglAddon())
   } catch {
     /* falls back to DOM renderer */
   }

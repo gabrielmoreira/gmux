@@ -69,7 +69,7 @@ async function preparePage(page) {
   const viewport = page.viewportSize()
   await page.setViewportSize({ width: viewport.width + 1, height: viewport.height })
 
-  await page.waitForTimeout(300)
+  await page.waitForTimeout(1200)
 }
 
 async function takeDesktop(browser) {
@@ -105,7 +105,7 @@ async function takeMobile(browser) {
   const menuBtn = await page.$('.mobile-bottom-bar button:first-child')
   if (menuBtn) {
     await menuBtn.click()
-    await page.waitForTimeout(350)
+    await page.waitForTimeout(150)
   }
 
   const outPath = path.join(ROOT, 'apps/website/src/assets/hero-mobile.png')
