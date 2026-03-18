@@ -60,7 +60,7 @@ func (c *Codex) Launchers() []adapter.Launcher {
 		ID:          "codex",
 		Label:       "Codex",
 		Command:     []string{"codex"},
-		Description: "AI coding agent (OpenAI)",
+		Description: "Coding Agent",
 	}}
 }
 

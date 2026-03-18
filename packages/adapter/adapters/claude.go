@@ -60,7 +60,7 @@ func (c *Claude) Launchers() []adapter.Launcher {
 		ID:          "claude",
 		Label:       "Claude Code",
 		Command:     []string{"claude"},
-		Description: "AI coding agent",
+		Description: "Coding Agent",
 	}}
 }
 
