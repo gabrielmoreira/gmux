@@ -528,11 +528,13 @@ function EmptyState({ launchers, health }: { launchers: LauncherDef[]; health: H
         </div>
       </div>
       <div class="empty-state-bottom">
-        <span>http://{location.host}</span>
-        {tailscaleURL && <>
+        {!tailscaleURL?.includes(location.host) &&<>
+          <span>http://{location.host}</span>
           <span class="empty-state-dot" />
-          <span>{maskTailnet(tailscaleURL)}</span>
         </>}
+        {tailscaleURL &&
+          <span>{maskTailnet(tailscaleURL)}</span>
+        }
       </div>
     </div>
   )
