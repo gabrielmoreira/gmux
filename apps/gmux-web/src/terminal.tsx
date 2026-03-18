@@ -47,6 +47,45 @@ export const TERM_THEME = {
 
 // ── Utilities ──
 
+/**
+ * Calculate terminal cols/rows that fit within a given element.
+ *
+ * We intentionally do NOT use FitAddon.proposeDimensions() because it
+ * measures `term.element.parentElement` — which may have grown with the
+ * terminal content (passive mode) or be affected by overflow scrollbars.
+ *
+ * Instead we measure `shellEl` (the flex-allocated viewport) directly,
+ * subtract the xterm element padding, and divide by cell size. This gives
+ * a stable measurement that's immune to terminal content or scrollbar state.
+ */
+function measureTerminalFit(
+  term: Terminal,
+  shellEl: HTMLElement,
+  /** Extra horizontal pixels to reserve (e.g. for xterm's internal scrollbar). */
+  reserveWidth = 0,
+): TerminalSize | null {
+  const dims = term.dimensions
+  if (!dims || dims.css.cell.width === 0 || dims.css.cell.height === 0) return null
+
+  const xtermEl = term.element
+  if (!xtermEl) return null
+
+  // Read the xterm element's padding (our CSS sets padding on .xterm).
+  const style = getComputedStyle(xtermEl)
+  const padX = parseInt(style.paddingLeft) + parseInt(style.paddingRight)
+  const padY = parseInt(style.paddingTop) + parseInt(style.paddingBottom)
+
+  // Measure the shell — the stable flex-allocated viewport.
+  const availW = shellEl.clientWidth - padX - reserveWidth
+  const availH = shellEl.clientHeight - padY
+
+  const cols = Math.max(2, Math.floor(availW / dims.css.cell.width))
+  const rows = Math.max(1, Math.floor(availH / dims.css.cell.height))
+
+  return { cols, rows }
+}
+
+/** Legacy wrapper — used in a few places that still go through FitAddon. */
 export function getProposedTerminalSize(fit: FitAddon | null): TerminalSize | null {
   if (!fit) return null
   const dims = fit.proposeDimensions()
@@ -102,6 +141,7 @@ function focusTerminalInput(term: Terminal | null): void {
   const prev = {
     position: textarea.style.position,
     left: textarea.style.left,
+    bottom: textarea.style.bottom,
     top: textarea.style.top,
     width: textarea.style.width,
     height: textarea.style.height,
@@ -110,17 +150,19 @@ function focusTerminalInput(term: Terminal | null): void {
   }
 
   textarea.style.position = 'fixed'
-  textarea.style.left = '12px'
-  textarea.style.top = '12px'
+  textarea.style.left = '0'
+  textarea.style.bottom = '0'
+  textarea.style.top = 'auto'
   textarea.style.width = '1px'
   textarea.style.height = '1px'
   textarea.style.opacity = '0.01'
-  textarea.style.zIndex = '1000'
+  textarea.style.zIndex = '-1'
   textarea.focus({ preventScroll: true })
 
   requestAnimationFrame(() => {
     textarea.style.position = prev.position
     textarea.style.left = prev.left
+    textarea.style.bottom = prev.bottom
     textarea.style.top = prev.top
     textarea.style.width = prev.width
     textarea.style.height = prev.height
@@ -201,11 +243,12 @@ export function TerminalView({
 
   // Resize xterm to fit the viewport and announce the new size to the backend.
   const fitAndResize = useCallback(() => {
-    const fit = fitRef.current
+    const term = termRef.current
+    const shell = shellRef.current
     const ws = wsRef.current
-    if (!fit) return
+    if (!term || !shell) return
 
-    const dims = getProposedTerminalSize(fit)
+    const dims = measureTerminalFit(term, shell)
     setViewportSize(dims)
     if (!dims) return
 
@@ -242,8 +285,10 @@ export function TerminalView({
     term.loadAddon(new ImageAddon())
     term.open(containerRef.current)
     loadPreferredRenderer(term)
+    // Initial fit: use FitAddon for the first resize (before shellRef is
+    // guaranteed stable), then switch to measureTerminalFit for everything after.
     fitAddon.fit()
-    setViewportSize(getProposedTerminalSize(fitAddon))
+    setViewportSize(shellRef.current ? measureTerminalFit(term, shellRef.current) : getProposedTerminalSize(fitAddon))
     termRef.current = term
     fitRef.current = fitAddon
     termIoRef.current = createTerminalIO(term)
@@ -295,13 +340,6 @@ export function TerminalView({
       startScrollTop: 0,
     }
 
-    const handlePointerDownCapture = (ev: PointerEvent) => {
-      if (!isDrivingRef.current) return
-      if (ev.button !== 0) return
-      if (isInteractiveTarget(ev.target)) return
-      term.focus()
-    }
-
     const handleTouchStartCapture = (ev: TouchEvent) => {
       if (ev.touches.length !== 1 || isInteractiveTarget(ev.target)) {
         touchPanState.active = false
@@ -316,13 +354,8 @@ export function TerminalView({
         return
       }
 
-      if (isDrivingRef.current) {
-        term.focus()
-        touchPanState.active = false
-        touchPanState.moved = false
-        return
-      }
-
+      // Track touch start for both modes — focus happens on touchend
+      // only if the user didn't drag (tap vs scroll distinction).
       touchPanState.active = true
       touchPanState.moved = false
       touchPanState.startX = ev.touches[0].clientX
@@ -332,7 +365,7 @@ export function TerminalView({
     }
 
     const handleTouchMoveCapture = (ev: TouchEvent) => {
-      if (isDrivingRef.current || !touchPanState.active || ev.touches.length !== 1) return
+      if (!touchPanState.active || ev.touches.length !== 1) return
 
       const host = shellRef.current
       if (!host) return
@@ -343,6 +376,9 @@ export function TerminalView({
       if (Math.abs(deltaX) > 6 || Math.abs(deltaY) > 6) {
         touchPanState.moved = true
       }
+
+      // In driving mode, just track movement — let xterm handle the gesture.
+      if (isDrivingRef.current) return
 
       const canScrollX = host.scrollWidth > host.clientWidth
       const canScrollY = host.scrollHeight > host.clientHeight
@@ -355,8 +391,14 @@ export function TerminalView({
     }
 
     const handleTouchEndCapture = () => {
-      if (!isDrivingRef.current && touchPanState.active && !touchPanState.moved) {
-        term.focus()
+      if (touchPanState.active && !touchPanState.moved) {
+        focusTerminalInput(term)
+        term.scrollToBottom()
+        const host = shellRef.current
+        if (host) {
+          host.scrollTop = host.scrollHeight
+          host.scrollLeft = 0
+        }
       }
       touchPanState.active = false
       touchPanState.moved = false
@@ -367,15 +409,15 @@ export function TerminalView({
       touchPanState.moved = false
     }
 
-    shell?.addEventListener('pointerdown', handlePointerDownCapture, true)
     shell?.addEventListener('touchstart', handleTouchStartCapture, { capture: true, passive: false })
     shell?.addEventListener('touchmove', handleTouchMoveCapture, { capture: true, passive: false })
     shell?.addEventListener('touchend', handleTouchEndCapture, true)
     shell?.addEventListener('touchcancel', clearTouchPan, true)
 
     const onWindowResize = () => {
-      const fit = fitRef.current
-      if (fit) setViewportSize(getProposedTerminalSize(fit))
+      const t = termRef.current
+      const s = shellRef.current
+      if (t && s) setViewportSize(measureTerminalFit(t, s))
 
       if (!isDrivingRef.current) {
         // Passive — keep xterm at PTY size, update viewport for pill derivation.
@@ -390,11 +432,16 @@ export function TerminalView({
     }
     window.addEventListener('resize', onWindowResize)
 
+    // Also listen to visualViewport resize for mobile keyboard open/close.
+    // The window resize event does not fire when the virtual keyboard changes.
+    const vv = window.visualViewport
+    if (vv) vv.addEventListener('resize', onWindowResize)
+
     return () => {
       disposed.current = true
       window.removeEventListener('keydown', handleGlobalKeydown, true)
       window.removeEventListener('resize', onWindowResize)
-      shell?.removeEventListener('pointerdown', handlePointerDownCapture, true)
+      if (vv) vv.removeEventListener('resize', onWindowResize)
       shell?.removeEventListener('touchstart', handleTouchStartCapture, true)
       shell?.removeEventListener('touchmove', handleTouchMoveCapture, true)
       shell?.removeEventListener('touchend', handleTouchEndCapture, true)
@@ -459,13 +506,40 @@ export function TerminalView({
 
       ws.onopen = () => {
         attempt = 0
+
+        // Always take over resize on connect — this device is clearly
+        // the one the user is actively interacting with.
+        isDrivingRef.current = true
+        const t = termRef.current
+        const s = shellRef.current
+        if (t && s) {
+          const dims = measureTerminalFit(t, s)
+          setViewportSize(dims)
+          if (dims) {
+            setPtySize(dims)
+            queueResize(dims)
+            announceResize(ws, dims)
+          }
+        }
       }
 
       ws.onmessage = (ev) => {
         if (typeof ev.data === 'string') {
           try {
             const msg = JSON.parse(ev.data)
-            if (msg.type === 'terminal_resize') {
+            // Legacy: old proxy sends resize_state on connect with cols/rows.
+            // Use it to initialize ptySize if we don't have one yet.
+            if (msg.type === 'resize_state') {
+              const cols = msg.cols as number | undefined
+              const rows = msg.rows as number | undefined
+              if (cols && rows) {
+                setPtySize({ cols, rows })
+                queueResize({ cols, rows })
+              }
+              return
+            }
+
+            if (msg.type === 'terminal_resize' || msg.type === 'resize_applied') {
               const cols = msg.cols as number | undefined
               const rows = msg.rows as number | undefined
               if (cols && rows) {
@@ -474,7 +548,7 @@ export function TerminalView({
                 queueResize(size)
 
                 // If the resize came from someone else, stop driving.
-                if (isDrivingRef.current && msg.source !== 'web_client') {
+                if (isDrivingRef.current && msg.source && msg.source !== 'web_client') {
                   isDrivingRef.current = false
                 }
               }
@@ -531,8 +605,11 @@ export function TerminalView({
     }
   }, [queueData, queueMany, queueResize, session.id])
 
-  // Pill is derived: viewport size differs from PTY size.
-  const showResizePill = session.alive && ptySize != null && viewportSize != null
+  // Pill is derived: viewport size differs from PTY size, and we're not
+  // already driving (if driving, the mismatch is transient — our resize
+  // is in flight and ptySize will catch up next frame).
+  const showResizePill = session.alive && !isDrivingRef.current
+    && ptySize != null && viewportSize != null
     && (viewportSize.cols !== ptySize.cols || viewportSize.rows !== ptySize.rows)
 
   if (USE_MOCK) {

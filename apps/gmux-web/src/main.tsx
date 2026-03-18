@@ -604,13 +604,19 @@ function MobileTerminalBar({
   onSend: (data: string) => void
   onToggleCtrl: () => void
 }) {
+  // Prevent mousedown/touchstart default on terminal key buttons so they
+  // don't steal focus from the terminal's hidden textarea (which would
+  // close the mobile keyboard). The menu button is excluded — opening
+  // the sidebar should be allowed to blur.
+  const keepFocus = (ev: Event) => ev.preventDefault()
+
   return (
     <div class="mobile-bottom-bar" aria-label="Mobile terminal controls">
       <button class="mobile-bottom-action" onClick={onMenu} title="Open sessions">
         ☰
       </button>
       <div class="mobile-bottom-sep" />
-      <div class="mobile-terminal-actions" role="toolbar" aria-label="Terminal keys">
+      <div class="mobile-terminal-actions" role="toolbar" aria-label="Terminal keys" onMouseDown={keepFocus}>
         <button class="mobile-bottom-action" disabled={!canSend} onClick={() => onSend('\x1b')} title="Escape">esc</button>
         <button class="mobile-bottom-action" disabled={!canSend} onClick={() => onSend('\t')} title="Tab">tab</button>
         <button
@@ -637,6 +643,20 @@ type ConnectionState = 'connecting' | 'connected' | 'error'
 const sidebarState = createSidebarState()
 
 function App() {
+  // Track visual viewport height for keyboard-aware layout.
+  // dvh doesn't respond to the virtual keyboard; visualViewport does.
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+
+    const update = () => {
+      document.documentElement.style.setProperty('--app-height', `${vv.height}px`)
+    }
+    update()
+    vv.addEventListener('resize', update)
+    return () => vv.removeEventListener('resize', update)
+  }, [])
+
   const [sessions, setSessions] = useState<Session[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
