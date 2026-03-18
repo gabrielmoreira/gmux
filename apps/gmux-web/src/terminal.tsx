@@ -414,34 +414,66 @@ export function TerminalView({
     shell?.addEventListener('touchend', handleTouchEndCapture, true)
     shell?.addEventListener('touchcancel', clearTouchPan, true)
 
-    const onWindowResize = () => {
-      const t = termRef.current
-      const s = shellRef.current
-      if (t && s) setViewportSize(measureTerminalFit(t, s))
-
-      if (!isDrivingRef.current) {
-        // Passive — keep xterm at PTY size, update viewport for pill derivation.
-        const current = currentSessionRef.current
-        if (current.terminal_cols && current.terminal_rows) {
-          queueResize({ cols: current.terminal_cols, rows: current.terminal_rows })
-        }
-        return
-      }
-
-      fitAndResize()
-    }
-    window.addEventListener('resize', onWindowResize)
-
-    // Also listen to visualViewport resize for mobile keyboard open/close.
-    // The window resize event does not fire when the virtual keyboard changes.
+    // On iOS, both window.resize and visualViewport.resize fire when the
+    // keyboard opens/closes, causing double-handling per event. Additionally,
+    // iOS fires visualViewport.resize on every frame of the keyboard animation
+    // — not just once when it settles.
+    //
+    // Strategy:
+    // - Use visualViewport exclusively when available (skip window.resize).
+    // - Debounce: coalesce rapid fires during keyboard animation into one call.
+    // - Re-focus after the viewport settles: keyboard animation blurs the
+    //   xterm textarea mid-transition, causing keystrokes (e.g. spacebar) to
+    //   be lost until the user taps again.
     const vv = window.visualViewport
-    if (vv) vv.addEventListener('resize', onWindowResize)
+
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null
+    let lastVvHeight = vv?.height ?? window.innerHeight
+
+    const onViewportResize = () => {
+      if (resizeTimer !== null) clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(() => {
+        resizeTimer = null
+
+        const t = termRef.current
+        const s = shellRef.current
+        if (t && s) setViewportSize(measureTerminalFit(t, s))
+
+        if (!isDrivingRef.current) {
+          // Passive — keep xterm at PTY size, update viewport for pill derivation.
+          const current = currentSessionRef.current
+          if (current.terminal_cols && current.terminal_rows) {
+            queueResize({ cols: current.terminal_cols, rows: current.terminal_rows })
+          }
+        } else {
+          fitAndResize()
+        }
+
+        // Re-focus after the viewport settles. iOS blurs the xterm textarea
+        // during the keyboard slide animation; refocusing restores typing.
+        const newHeight = vv?.height ?? window.innerHeight
+        const heightChanged = Math.abs(newHeight - lastVvHeight) > 50
+        lastVvHeight = newHeight
+        if (heightChanged) {
+          // Extra delay: let iOS fully finish the keyboard transition before
+          // grabbing focus, otherwise iOS immediately re-blurs.
+          setTimeout(() => focusTerminalInput(termRef.current), 120)
+        }
+      }, 80) // 80 ms debounce — keyboard animation typically takes ~250 ms
+    }
+
+    if (vv) {
+      vv.addEventListener('resize', onViewportResize)
+    } else {
+      window.addEventListener('resize', onViewportResize)
+    }
 
     return () => {
+      if (resizeTimer !== null) clearTimeout(resizeTimer)
       disposed.current = true
       window.removeEventListener('keydown', handleGlobalKeydown, true)
-      window.removeEventListener('resize', onWindowResize)
-      if (vv) vv.removeEventListener('resize', onWindowResize)
+      window.removeEventListener('resize', onViewportResize)
+      if (vv) vv.removeEventListener('resize', onViewportResize)
       shell?.removeEventListener('touchstart', handleTouchStartCapture, true)
       shell?.removeEventListener('touchmove', handleTouchMoveCapture, true)
       shell?.removeEventListener('touchend', handleTouchEndCapture, true)
