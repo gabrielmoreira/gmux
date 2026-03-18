@@ -21,7 +21,7 @@ gmux make build
 
 Open **[localhost:8790](http://localhost:8790)**. Sessions appear in the sidebar grouped by project directory. Click one to attach a live terminal.
 
-`gmux` auto-starts the daemon (`gmuxd`) on first run — there's nothing else to set up.
+`gmux` auto-starts the daemon (`gmuxd`) on first run — there's nothing else to set up. For daemon commands, run `gmuxd -h`.
 
 ## Next steps
 

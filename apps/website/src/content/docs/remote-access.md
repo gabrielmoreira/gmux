@@ -82,10 +82,11 @@ This gives you `https://gmux-desktop.your-tailnet.ts.net` and `https://gmux-lapt
 ### 4. Restart gmuxd
 
 ```bash
-# If gmuxd is running, kill it — gmux will auto-start it next time
-pkill gmuxd
-gmux pi  # or any command — gmuxd starts automatically
+gmuxd shutdown
+gmux pi  # or any command — gmux auto-starts gmuxd again
 ```
+
+For manual daemon commands, run `gmuxd -h`.
 
 Look for the log line:
 

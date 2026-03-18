@@ -92,7 +92,9 @@ port = 9999
 Or:
 
 ```bash
-GMUXD_PORT=9999 gmuxd
+GMUXD_PORT=9999 gmuxd start
 ```
+
+For daemon commands, run `gmuxd -h`.
 
 The env var takes precedence over the config file. The listen address is always `127.0.0.1` — see [Security](/security) for why.

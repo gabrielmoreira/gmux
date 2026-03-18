@@ -52,10 +52,7 @@ func main() {
 
 	// No args → open the UI in a browser.
 	if len(args) == 0 {
-		gmuxdAddr := os.Getenv("GMUXD_ADDR")
-		if gmuxdAddr == "" {
-			gmuxdAddr = "http://localhost:8790"
-		}
+		gmuxdAddr := configuredGmuxdAddr()
 		ensureGmuxd(gmuxdAddr)
 
 		// Wait for gmuxd to be reachable before opening browser.
@@ -183,10 +180,7 @@ func main() {
 	}
 
 	// Auto-start gmuxd if not running (one-shot, never retried), then register.
-	gmuxdAddr := os.Getenv("GMUXD_ADDR")
-	if gmuxdAddr == "" {
-		gmuxdAddr = "http://localhost:8790"
-	}
+	gmuxdAddr := configuredGmuxdAddr()
 	if started := ensureGmuxd(gmuxdAddr); started && interactive {
 		fmt.Fprintf(os.Stderr, "  UI: %s\n", gmuxdAddr)
 	}
@@ -265,13 +259,8 @@ func main() {
 // Returns true if gmuxd was started by this call.
 func ensureGmuxd(gmuxdAddr string) bool {
 	// Quick health check — if it's already running, nothing to do.
-	client := &http.Client{Timeout: 500 * time.Millisecond}
-	resp, err := client.Get(gmuxdAddr + "/v1/health")
-	if err == nil {
-		resp.Body.Close()
-		if resp.StatusCode == 200 {
-			return false
-		}
+	if gmuxdHealthy(gmuxdAddr, 500*time.Millisecond) {
+		return false
 	}
 
 	// Not running — find gmuxd binary: sibling first, then PATH.
@@ -299,7 +288,7 @@ func ensureGmuxd(gmuxdAddr string) bool {
 		logFile = nil
 	}
 
-	cmd := exec.Command(gmuxdBin)
+	cmd := exec.Command(gmuxdBin, "start")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Stdout = nil
 	cmd.Stderr = logFile
@@ -317,15 +306,29 @@ func ensureGmuxd(gmuxdAddr string) bool {
 		}
 	}()
 
-	fmt.Fprintf(os.Stderr, "gmux: no daemon found, starting gmuxd (pid %d)\n", cmd.Process.Pid)
+	fmt.Fprintf(os.Stderr, "gmux: auto-started gmuxd at %s — gmuxd -h\n", gmuxdAddr)
 	return true
 }
 
-func registerWithGmuxd(sessionID, socketPath string) {
-	gmuxdAddr := os.Getenv("GMUXD_ADDR")
-	if gmuxdAddr == "" {
-		gmuxdAddr = "http://localhost:8790"
+func configuredGmuxdAddr() string {
+	if gmuxdAddr := os.Getenv("GMUXD_ADDR"); gmuxdAddr != "" {
+		return gmuxdAddr
 	}
+	return "http://localhost:8790"
+}
+
+func gmuxdHealthy(gmuxdAddr string, timeout time.Duration) bool {
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Get(gmuxdAddr + "/v1/health")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+func registerWithGmuxd(sessionID, socketPath string) {
+	gmuxdAddr := configuredGmuxdAddr()
 
 	payload, _ := json.Marshal(map[string]string{
 		"session_id":  sessionID,
@@ -563,10 +566,7 @@ func maskTailscaleURL(url string) string {
 }
 
 func deregisterFromGmuxd(sessionID string) {
-	gmuxdAddr := os.Getenv("GMUXD_ADDR")
-	if gmuxdAddr == "" {
-		gmuxdAddr = "http://localhost:8790"
-	}
+	gmuxdAddr := configuredGmuxdAddr()
 
 	payload, _ := json.Marshal(map[string]string{"session_id": sessionID})
 	client := &http.Client{Timeout: 2 * time.Second}

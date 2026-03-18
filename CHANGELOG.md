@@ -4,6 +4,11 @@ Full commit-level changelogs are on each [GitHub release](https://github.com/gmu
 
 ## v0.4.0
 
+### Breaking changes
+
+- **`gmuxd` is now subcommand-based** — run `gmuxd start`, `gmuxd shutdown`, `gmuxd version`, or `gmuxd help`; bare `gmuxd` now prints help instead of starting the daemon
+- **`gmuxd start` is now strict by default** — if another daemon is already running, it fails unless you pass `--replace`
+
 - **Mobile terminal input + passive panning** — tapping the terminal now re-focuses xterm on mobile, and when a session is sized for another device you can drag to pan the oversized terminal in the browser
 
 ## v0.3.0

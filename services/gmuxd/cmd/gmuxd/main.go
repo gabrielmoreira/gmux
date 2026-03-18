@@ -146,7 +146,108 @@ func launchGmux(gmuxBin string, command []string, cwd string) (int, error) {
 	return cmd.Process.Pid, nil
 }
 
+func printUsage(w io.Writer) {
+	_, _ = fmt.Fprintf(w, "Usage: gmuxd <command> [options]\n\nCommands:\n  start [--replace]  Start the gmux daemon\n  shutdown           Ask the running gmux daemon to stop\n  version            Show gmuxd version\n  help               Show this help\n\nTip:\n  gmux <command>     Run a command; gmux auto-starts gmuxd if needed\n  More help: https://gmux.app\n")
+}
+
+func daemonAddr() (string, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return "", err
+	}
+	port := envOr("GMUXD_PORT", fmt.Sprintf("%d", cfg.Port))
+	return "127.0.0.1:" + port, nil
+}
+
+func daemonRunning(addr string) bool {
+	client := &http.Client{Timeout: 500 * time.Millisecond}
+	resp, err := client.Get("http://" + addr + "/v1/health")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+func prepareDaemonAddr(addr string, replace bool, stderr io.Writer) int {
+	if replace {
+		requestShutdown(addr)
+		if daemonRunning(addr) {
+			_, _ = fmt.Fprintf(stderr, "gmuxd: existing daemon at %s did not shut down\n", addr)
+			return 1
+		}
+		return 0
+	}
+	if daemonRunning(addr) {
+		_, _ = fmt.Fprintf(stderr, "gmuxd: already running at %s (use 'gmuxd start --replace' to replace it)\n", addr)
+		return 1
+	}
+	return 0
+}
+
+func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		printUsage(stdout)
+		return 0
+	}
+
+	cmd := args[0]
+	args = args[1:]
+
+	switch cmd {
+	case "start":
+		replace := false
+		for _, arg := range args {
+			switch arg {
+			case "--replace":
+				replace = true
+			case "-h", "--help":
+				_, _ = fmt.Fprintf(stdout, "Usage: gmuxd start [--replace]\n")
+				return 0
+			default:
+				_, _ = fmt.Fprintf(stderr, "gmuxd start: unknown option %q\n", arg)
+				return 2
+			}
+		}
+		return serve(replace, stderr)
+	case "shutdown":
+		if len(args) > 0 {
+			_, _ = fmt.Fprintf(stderr, "gmuxd shutdown: unexpected arguments: %s\n", strings.Join(args, " "))
+			return 2
+		}
+		addr, err := daemonAddr()
+		if err != nil {
+			_, _ = fmt.Fprintf(stderr, "gmuxd: %v\n", err)
+			return 1
+		}
+		if requestShutdown(addr) {
+			_, _ = fmt.Fprintf(stdout, "gmuxd: shutdown requested for %s\n", addr)
+		} else {
+			_, _ = fmt.Fprintf(stdout, "gmuxd: no running daemon found at %s\n", addr)
+		}
+		return 0
+	case "version":
+		if len(args) > 0 {
+			_, _ = fmt.Fprintf(stderr, "gmuxd version: unexpected arguments: %s\n", strings.Join(args, " "))
+			return 2
+		}
+		_, _ = fmt.Fprintf(stdout, "%s\n", version)
+		return 0
+	case "help", "-h", "--help":
+		printUsage(stdout)
+		return 0
+	default:
+		_, _ = fmt.Fprintf(stderr, "gmuxd: unknown command %q\n\n", cmd)
+		printUsage(stderr)
+		return 2
+	}
+}
+
 func main() {
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+func serve(replace bool, stderr io.Writer) int {
 	gmuxBin := resolveGmux() // resolve once, use everywhere
 	if gmuxBin != "" {
 		log.Printf("gmux: %s", gmuxBin)
@@ -590,16 +691,18 @@ func main() {
 
 	mux.Handle("/", spaHandler())
 
-	// ── Load config ──
+	addr, err := daemonAddr()
+	if err != nil {
+		log.Fatalf("FATAL: %v", err)
+	}
 
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("FATAL: %v", err)
 	}
-
-	// Env var overrides config file port.
-	port := envOr("GMUXD_PORT", fmt.Sprintf("%d", cfg.Port))
-	addr := "127.0.0.1:" + port
+	if code := prepareDaemonAddr(addr, replace, stderr); code != 0 {
+		return code
+	}
 
 	// ── Shutdown endpoint (used by new instances to take over the port) ──
 
@@ -622,10 +725,6 @@ func main() {
 			srv.Shutdown(ctx)
 		}()
 	})
-
-	// ── Take over from any existing gmuxd on this port ──
-
-	requestShutdown(addr)
 
 	// ── Optional tailscale listener ──
 
@@ -656,18 +755,22 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Printf("gmuxd stopped")
+	return 0
 }
 
 // requestShutdown asks an existing gmuxd on the same address to shut down,
 // then waits for the port to become available. This replaces PID files —
 // the port itself is the lock.
-func requestShutdown(addr string) {
+func requestShutdown(addr string) bool {
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Post("http://"+addr+"/v1/shutdown", "", nil)
 	if err != nil {
-		return // Nothing listening — port is free.
+		return false
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
 	log.Printf("asked existing gmuxd at %s to shut down", addr)
 
 	// Wait for the port to become available.
@@ -678,11 +781,11 @@ func requestShutdown(addr string) {
 		select {
 		case <-deadline:
 			log.Printf("warning: timed out waiting for %s to free up", addr)
-			return
+			return true
 		case <-tick.C:
 			resp, err := client.Get("http://" + addr + "/v1/health")
 			if err != nil {
-				return // Port is free.
+				return true
 			}
 			resp.Body.Close()
 		}

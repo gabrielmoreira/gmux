@@ -64,7 +64,7 @@ func TestEndToEnd(t *testing.T) {
 	gmuxdCtx, gmuxdCancel := context.WithCancel(context.Background())
 	defer gmuxdCancel()
 
-	gmuxdCmd := exec.CommandContext(gmuxdCtx, gmuxdBin)
+	gmuxdCmd := exec.CommandContext(gmuxdCtx, gmuxdBin, "start")
 	gmuxdCmd.Env = append(os.Environ(), fmt.Sprintf("GMUXD_PORT=%d", port))
 	gmuxdCmd.Stdout = os.Stdout
 	gmuxdCmd.Stderr = os.Stderr

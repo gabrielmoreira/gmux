@@ -25,7 +25,7 @@ gmux                       # open the UI
 
 Open `localhost:8790` — all three sessions are there, grouped by project, with live status indicators. Click one to attach a full terminal. The same xterm.js that powers the VS Code terminal, running in your browser.
 
-The daemon (`gmuxd`) starts automatically on first use. There's nothing else to set up.
+The daemon (`gmuxd`) starts automatically on first use. There's nothing else to set up. For daemon commands, run `gmuxd -h`.
 
 ## How it works
 
