@@ -218,8 +218,13 @@ func (c *Claude) ParseSessionFile(path string) (*adapter.SessionFileInfo, error)
 //
 // Signals:
 //   - custom-title → title update
-//   - type:"user" → working (assistant will respond) + title from first user text
-//   - type:"assistant" with text content (no tool_use) → idle (turn likely complete)
+//   - type:"user" → working (assistant will respond)
+//   - type:"assistant" → status from stop_reason + content analysis:
+//       stop_reason=null + tool_use  → working (tool loop continues)
+//       stop_reason=null + text only → idle (final response, no stop_reason on streaming)
+//       stop_reason="end_turn"       → idle (normal completion)
+//       stop_reason="stop_sequence"  → idle (user pressed Esc)
+//       thinking-only                → intermediate, ignored
 func (c *Claude) ParseNewLines(lines []string) []adapter.FileEvent {
 	var events []adapter.FileEvent
 	for _, line := range lines {
@@ -252,10 +257,10 @@ func (c *Claude) ParseNewLines(lines []string) []adapter.FileEvent {
 			})
 
 		case "assistant":
-			// Check if this is a final assistant message (text content, no tool_use).
 			var msg struct {
 				Message struct {
-					Content []struct {
+					StopReason *string `json:"stop_reason"`
+					Content    []struct {
 						Type string `json:"type"`
 					} `json:"content"`
 				} `json:"message"`
@@ -263,6 +268,7 @@ func (c *Claude) ParseNewLines(lines []string) []adapter.FileEvent {
 			if err := json.Unmarshal([]byte(line), &msg); err != nil {
 				continue
 			}
+
 			hasToolUse := false
 			hasText := false
 			for _, block := range msg.Message.Content {
@@ -273,13 +279,21 @@ func (c *Claude) ParseNewLines(lines []string) []adapter.FileEvent {
 					hasText = true
 				}
 			}
-			// Text with no tool_use = assistant finished talking.
-			// tool_use = still working (will get tool result, then continue).
-			// thinking-only = intermediate, ignore.
-			if hasText && !hasToolUse {
+
+			switch {
+			case hasToolUse:
+				// Tool use = still working (will get tool result, then continue).
+				// Re-assert working so recovery from transient states works.
+				events = append(events, adapter.FileEvent{
+					Status: &adapter.Status{Working: true},
+				})
+			case hasText:
+				// Text with no tool_use = turn complete (end_turn, stop_sequence,
+				// or streaming null stop_reason). All mean idle.
 				events = append(events, adapter.FileEvent{
 					Status: &adapter.Status{},
 				})
+			// thinking-only = intermediate, no event.
 			}
 		}
 	}

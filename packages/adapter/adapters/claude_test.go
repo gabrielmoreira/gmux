@@ -308,12 +308,15 @@ func TestClaudeParseNewLinesAssistantTextOnly(t *testing.T) {
 }
 
 func TestClaudeParseNewLinesAssistantToolUse(t *testing.T) {
-	// tool_use in content = still working, no event
+	// tool_use in content = still working, emit working=true to re-assert.
 	events := NewClaude().ParseNewLines([]string{
 		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"bash","input":{"command":"ls"}}],"stop_reason":null},"uuid":"a1"}`,
 	})
-	if len(events) != 0 {
-		t.Errorf("expected 0 events for tool_use, got %d", len(events))
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event for tool_use, got %d", len(events))
+	}
+	if events[0].Status == nil || !events[0].Status.Working {
+		t.Error("expected working=true for tool_use (agent loop continues)")
 	}
 }
 
@@ -332,8 +335,58 @@ func TestClaudeParseNewLinesAssistantTextAndToolUse(t *testing.T) {
 	events := NewClaude().ParseNewLines([]string{
 		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll run a command"},{"type":"tool_use","id":"t1","name":"bash","input":{"command":"ls"}}],"stop_reason":null},"uuid":"a1"}`,
 	})
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event for text+tool_use, got %d", len(events))
+	}
+	if events[0].Status == nil || !events[0].Status.Working {
+		t.Error("expected working=true for text+tool_use")
+	}
+}
+
+func TestClaudeParseNewLinesAssistantAborted(t *testing.T) {
+	// User pressed Esc — stop_reason="stop_sequence" with text content → idle.
+	events := NewClaude().ParseNewLines([]string{
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I was saying..."}],"stop_reason":"stop_sequence"},"uuid":"a1"}`,
+	})
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Status == nil || events[0].Status.Working {
+		t.Error("expected working=false on stop_sequence (abort)")
+	}
+}
+
+func TestClaudeParseNewLinesFullTurnCycle(t *testing.T) {
+	// Complete turn: user → tool_use → tool_use → end_turn
+	events := NewClaude().ParseNewLines([]string{
+		`{"type":"user","message":{"role":"user","content":"fix bug"},"uuid":"u1"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"bash","input":{}}],"stop_reason":null},"uuid":"a1"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t2","name":"bash","input":{}}],"stop_reason":null},"uuid":"a2"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Done."}],"stop_reason":"end_turn"},"uuid":"a3"}`,
+	})
+	// user=working, tool_use=working, tool_use=working, end_turn=idle
+	if len(events) != 4 {
+		t.Fatalf("expected 4 events, got %d", len(events))
+	}
+	for i := 0; i < 3; i++ {
+		if events[i].Status == nil || !events[i].Status.Working {
+			t.Errorf("event %d should be working=true", i)
+		}
+	}
+	if events[3].Status == nil || events[3].Status.Working {
+		t.Error("last event should be working=false (end_turn)")
+	}
+}
+
+func TestClaudeParseNewLinesIgnoresNonMessageTypes(t *testing.T) {
+	events := NewClaude().ParseNewLines([]string{
+		`{"type":"file-history-snapshot","files":[]}`,
+		`{"type":"system","subtype":"local_command","content":"output"}`,
+		`{"type":"queue-operation","operation":"dequeue"}`,
+		`{"type":"last-prompt","prompt":"something"}`,
+	})
 	if len(events) != 0 {
-		t.Errorf("expected 0 events for text+tool_use, got %d", len(events))
+		t.Errorf("expected 0 events for non-message types, got %d", len(events))
 	}
 }
 
@@ -351,17 +404,20 @@ func TestClaudeParseNewLinesMultiTurn(t *testing.T) {
 	events := NewClaude().ParseNewLines([]string{
 		`{"type":"user","message":{"role":"user","content":"Fix it"},"uuid":"u1"}`,
 		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"bash","input":{}}],"stop_reason":null},"uuid":"a1"}`,
-		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"All done."}],"stop_reason":null},"uuid":"a2"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"All done."}],"stop_reason":"end_turn"},"uuid":"a2"}`,
 	})
-	// user → working, tool_use → nothing, text → idle
-	if len(events) != 2 {
-		t.Fatalf("expected 2 events, got %d: %v", len(events), events)
+	// user → working, tool_use → working, text → idle
+	if len(events) != 3 {
+		t.Fatalf("expected 3 events, got %d: %v", len(events), events)
 	}
 	if !events[0].Status.Working {
-		t.Error("first event should be working=true")
+		t.Error("first event should be working=true (user)")
 	}
-	if events[1].Status.Working {
-		t.Error("second event should be working=false")
+	if !events[1].Status.Working {
+		t.Error("second event should be working=true (tool_use)")
+	}
+	if events[2].Status.Working {
+		t.Error("third event should be working=false (end_turn)")
 	}
 }
 

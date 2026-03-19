@@ -400,3 +400,284 @@ func TestAttributionStickiness(t *testing.T) {
 		t.Fatal("attribution should be sticky")
 	}
 }
+
+// --- Claude status lifecycle tests ---
+
+func setupClaudeFileMonitor(t *testing.T) (*FileMonitor, *store.Store, string) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cwd := "/home/user/dev/project"
+	claude := adapters.NewClaude()
+	sessionDir := claude.SessionDir(cwd)
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	s := store.New()
+	s.Upsert(store.Session{
+		ID:         "sess-claude",
+		Cwd:        cwd,
+		Kind:       "claude",
+		Alive:      true,
+		StartedAt:  time.Now().UTC().Format(time.RFC3339),
+		SocketPath: "/tmp/fake.sock",
+	})
+
+	fm := NewFileMonitor(s)
+	if fm.watcher != nil {
+		fm.watcher.Close()
+		fm.watcher = nil
+	}
+
+	fm.sessions["sess-claude"] = &monitoredSession{
+		id:      "sess-claude",
+		cwd:     cwd,
+		kind:    "claude",
+		adapter: claude,
+		fileMon: claude,
+		filer:   claude,
+	}
+
+	return fm, s, sessionDir
+}
+
+func TestClaudeAbortClearsWorking(t *testing.T) {
+	fm, s, dir := setupClaudeFileMonitor(t)
+	path := filepath.Join(dir, "test-session.jsonl")
+
+	// User message → working.
+	simulateFileWrite(t, fm, "sess-claude", path,
+		`{"type":"user","sessionId":"abc","timestamp":"2026-03-19T10:00:00Z","cwd":"/home/user/dev/project","message":{"role":"user","content":"fix bug"},"uuid":"u1"}`,
+	)
+	sess, _ := s.Get("sess-claude")
+	if sess.Status == nil || !sess.Status.Working {
+		t.Fatal("expected working=true after user message")
+	}
+
+	// Tool use → still working.
+	simulateFileWrite(t, fm, "sess-claude", path,
+		`{"type":"assistant","sessionId":"abc","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"bash","input":{}}],"stop_reason":null},"uuid":"a1"}`,
+	)
+	sess, _ = s.Get("sess-claude")
+	if sess.Status == nil || !sess.Status.Working {
+		t.Fatal("expected working=true after tool_use")
+	}
+
+	// User presses Esc → stop_sequence → idle.
+	simulateFileWrite(t, fm, "sess-claude", path,
+		`{"type":"assistant","sessionId":"abc","message":{"role":"assistant","content":[{"type":"text","text":"I was..."}],"stop_reason":"stop_sequence"},"uuid":"a2"}`,
+	)
+	sess, _ = s.Get("sess-claude")
+	if sess.Status != nil {
+		t.Fatalf("expected nil status (idle) after abort, got %+v", sess.Status)
+	}
+}
+
+func TestClaudeFullLifecycle(t *testing.T) {
+	fm, s, dir := setupClaudeFileMonitor(t)
+	path := filepath.Join(dir, "test-session.jsonl")
+
+	// 1. User message → working.
+	simulateFileWrite(t, fm, "sess-claude", path,
+		`{"type":"user","sessionId":"abc","timestamp":"2026-03-19T10:00:00Z","cwd":"/home/user/dev/project","message":{"role":"user","content":"fix bug"},"uuid":"u1"}`,
+	)
+	sess, _ := s.Get("sess-claude")
+	if sess.Status == nil || !sess.Status.Working {
+		t.Fatal("expected working after user message")
+	}
+
+	// 2. Tool loop.
+	simulateFileWrite(t, fm, "sess-claude", path,
+		`{"type":"assistant","sessionId":"abc","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"bash","input":{}}],"stop_reason":null},"uuid":"a1"}`,
+	)
+	sess, _ = s.Get("sess-claude")
+	if sess.Status == nil || !sess.Status.Working {
+		t.Fatal("expected working during tool loop")
+	}
+
+	// 3. Thinking (intermediate) — no change.
+	simulateFileWrite(t, fm, "sess-claude", path,
+		`{"type":"assistant","sessionId":"abc","message":{"role":"assistant","content":[{"type":"thinking","thinking":"let me think..."}],"stop_reason":null},"uuid":"a2"}`,
+	)
+	sess, _ = s.Get("sess-claude")
+	if sess.Status == nil || !sess.Status.Working {
+		t.Fatal("expected working preserved after thinking-only")
+	}
+
+	// 4. More tool use.
+	simulateFileWrite(t, fm, "sess-claude", path,
+		`{"type":"assistant","sessionId":"abc","message":{"role":"assistant","content":[{"type":"tool_use","id":"t2","name":"read","input":{}}],"stop_reason":null},"uuid":"a3"}`,
+	)
+	sess, _ = s.Get("sess-claude")
+	if sess.Status == nil || !sess.Status.Working {
+		t.Fatal("expected working during second tool use")
+	}
+
+	// 5. Agent finishes (end_turn).
+	simulateFileWrite(t, fm, "sess-claude", path,
+		`{"type":"assistant","sessionId":"abc","message":{"role":"assistant","content":[{"type":"text","text":"Done."}],"stop_reason":"end_turn"},"uuid":"a4"}`,
+	)
+	sess, _ = s.Get("sess-claude")
+	if sess.Status != nil {
+		t.Fatalf("expected idle after end_turn, got %+v", sess.Status)
+	}
+
+	// 6. Second turn.
+	simulateFileWrite(t, fm, "sess-claude", path,
+		`{"type":"user","sessionId":"abc","message":{"role":"user","content":"also fix login"},"uuid":"u2"}`,
+	)
+	sess, _ = s.Get("sess-claude")
+	if sess.Status == nil || !sess.Status.Working {
+		t.Fatal("expected working after second user message")
+	}
+
+	// 7. User aborts (stop_sequence).
+	simulateFileWrite(t, fm, "sess-claude", path,
+		`{"type":"assistant","sessionId":"abc","message":{"role":"assistant","content":[{"type":"text","text":"I was..."}],"stop_reason":"stop_sequence"},"uuid":"a5"}`,
+	)
+	sess, _ = s.Get("sess-claude")
+	if sess.Status != nil {
+		t.Fatalf("expected idle after stop_sequence, got %+v", sess.Status)
+	}
+}
+
+func TestClaudeCustomTitleDuringWorkPreservesStatus(t *testing.T) {
+	fm, s, dir := setupClaudeFileMonitor(t)
+	path := filepath.Join(dir, "test-session.jsonl")
+
+	simulateFileWrite(t, fm, "sess-claude", path,
+		`{"type":"user","sessionId":"abc","timestamp":"2026-03-19T10:00:00Z","cwd":"/home/user/dev/project","message":{"role":"user","content":"fix bug"},"uuid":"u1"}`,
+	)
+
+	// Custom title while working — working should be preserved.
+	simulateFileWrite(t, fm, "sess-claude", path,
+		`{"type":"custom-title","customTitle":"Bug fix session","sessionId":"abc"}`,
+	)
+	sess, _ := s.Get("sess-claude")
+	if sess.AdapterTitle != "Bug fix session" {
+		t.Errorf("expected title 'Bug fix session', got %q", sess.AdapterTitle)
+	}
+	if sess.Status == nil || !sess.Status.Working {
+		t.Fatal("expected working=true preserved after custom-title")
+	}
+}
+
+// --- Codex status lifecycle tests ---
+
+func setupCodexFileMonitor(t *testing.T) (*FileMonitor, *store.Store, string) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cwd := "/home/user/dev/project"
+	codex := adapters.NewCodex()
+	// Codex uses date-nested dirs, create today's.
+	sessionDir := codex.SessionDir(cwd)
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	s := store.New()
+	s.Upsert(store.Session{
+		ID:         "sess-codex",
+		Cwd:        cwd,
+		Kind:       "codex",
+		Alive:      true,
+		StartedAt:  time.Now().UTC().Format(time.RFC3339),
+		SocketPath: "/tmp/fake.sock",
+	})
+
+	fm := NewFileMonitor(s)
+	if fm.watcher != nil {
+		fm.watcher.Close()
+		fm.watcher = nil
+	}
+
+	fm.sessions["sess-codex"] = &monitoredSession{
+		id:      "sess-codex",
+		cwd:     cwd,
+		kind:    "codex",
+		adapter: codex,
+		fileMon: codex,
+		filer:   codex,
+	}
+
+	return fm, s, sessionDir
+}
+
+func TestCodexAbortClearsWorking(t *testing.T) {
+	fm, s, dir := setupCodexFileMonitor(t)
+	path := filepath.Join(dir, "test.jsonl")
+
+	simulateFileWrite(t, fm, "sess-codex", path,
+		`{"type":"session_meta","payload":{"id":"abc","timestamp":"2026-03-19T10:00:00Z","cwd":"/home/user/dev/project"}}`,
+		`{"type":"event_msg","payload":{"type":"user_message"}}`,
+	)
+	sess, _ := s.Get("sess-codex")
+	if sess.Status == nil || !sess.Status.Working {
+		t.Fatal("expected working=true after user_message")
+	}
+
+	// User aborts.
+	simulateFileWrite(t, fm, "sess-codex", path,
+		`{"type":"event_msg","payload":{"type":"turn_aborted"}}`,
+	)
+	sess, _ = s.Get("sess-codex")
+	if sess.Status != nil {
+		t.Fatalf("expected nil status (idle) after turn_aborted, got %+v", sess.Status)
+	}
+}
+
+func TestCodexFullLifecycle(t *testing.T) {
+	fm, s, dir := setupCodexFileMonitor(t)
+	path := filepath.Join(dir, "test.jsonl")
+
+	// 1. Session starts + user message → working.
+	simulateFileWrite(t, fm, "sess-codex", path,
+		`{"type":"session_meta","payload":{"id":"abc","timestamp":"2026-03-19T10:00:00Z","cwd":"/home/user/dev/project"}}`,
+		`{"type":"event_msg","payload":{"type":"user_message"}}`,
+	)
+	sess, _ := s.Get("sess-codex")
+	if sess.Status == nil || !sess.Status.Working {
+		t.Fatal("expected working after user_message")
+	}
+
+	// 2. Agent works (function calls — no status events).
+	simulateFileWrite(t, fm, "sess-codex", path,
+		`{"type":"response_item","payload":{"type":"function_call"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output"}}`,
+	)
+	sess, _ = s.Get("sess-codex")
+	if sess.Status == nil || !sess.Status.Working {
+		t.Fatal("expected working preserved during function calls")
+	}
+
+	// 3. Task complete → idle.
+	simulateFileWrite(t, fm, "sess-codex", path,
+		`{"type":"event_msg","payload":{"type":"task_complete"}}`,
+	)
+	sess, _ = s.Get("sess-codex")
+	if sess.Status != nil {
+		t.Fatalf("expected idle after task_complete, got %+v", sess.Status)
+	}
+
+	// 4. Second turn.
+	simulateFileWrite(t, fm, "sess-codex", path,
+		`{"type":"event_msg","payload":{"type":"user_message"}}`,
+	)
+	sess, _ = s.Get("sess-codex")
+	if sess.Status == nil || !sess.Status.Working {
+		t.Fatal("expected working after second user_message")
+	}
+
+	// 5. Turn cancelled.
+	simulateFileWrite(t, fm, "sess-codex", path,
+		`{"type":"event_msg","payload":{"type":"turn_cancelled"}}`,
+	)
+	sess, _ = s.Get("sess-codex")
+	if sess.Status != nil {
+		t.Fatalf("expected idle after turn_cancelled, got %+v", sess.Status)
+	}
+}
