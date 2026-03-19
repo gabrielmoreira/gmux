@@ -121,6 +121,8 @@ function ctrlSequenceFor(data: string): string | null {
       return '\x1f'
     case '?':
       return '\x7f'
+    case '\x7f': // Backspace → Ctrl+H (backward-kill-char / word-erase depending on app)
+      return '\x08'
     default:
       return null
   }
