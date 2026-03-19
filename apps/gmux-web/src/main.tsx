@@ -4,6 +4,7 @@ import '@xterm/xterm/css/xterm.css'
 import './styles.css'
 import { createSidebarState } from './sidebar-state'
 import { TerminalView } from './terminal'
+import { useArrivalPulse } from './use-arrival-pulse'
 
 import type { Session, Folder } from './types'
 import { groupByFolder } from './types'
@@ -299,6 +300,7 @@ function SessionItem({
   onClose?: () => void
 }) {
   const dotState = resuming ? 'working' : sessionDotState(session)
+  const arrival = useArrivalPulse(dotState)
 
   return (
     <div
@@ -306,7 +308,7 @@ function SessionItem({
       onClick={onClick}
       onAuxClick={(e) => { if (e.button === 1 && onClose) { e.preventDefault(); onClose() } }}
     >
-      <span class={`session-dot-indicator ${dotState}`} />
+      <span class={`session-dot-indicator ${dotState}${arrival ? ` ${arrival}` : ''}`} />
       <div class="session-content">
         <div class="session-title-row">
           <span class="session-title">{session.title}</span>
@@ -636,6 +638,8 @@ function MobileTerminalBar({
   onToggleAlt: () => void
   onFocusTerminal: () => void
 }) {
+  const arrival = useArrivalPulse(backgroundActivity)
+
   // Prevent blur from stealing focus away from the terminal on mousedown,
   // while still allowing individual onClick handlers to refocus as needed.
   const keepFocus = (ev: Event) => ev.preventDefault()
@@ -695,7 +699,7 @@ function MobileTerminalBar({
   return (
     <div class="mobile-bottom-bar" aria-label="Mobile terminal controls">
       <button
-        class={`mobile-bottom-action menu-btn${backgroundActivity !== 'none' ? ` bg-${backgroundActivity}` : ''}`}
+        class={`mobile-bottom-action menu-btn${backgroundActivity !== 'none' ? ` bg-${backgroundActivity}` : ''}${arrival ? ` bg-${arrival}` : ''}`}
         onClick={onMenu}
         title="Open sessions"
       >
