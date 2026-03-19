@@ -51,9 +51,14 @@ async function waitForSession(port: number, timeoutMs = 15_000): Promise<string>
 }
 
 export default async function globalSetup(config: FullConfig) {
-  // Ensure binaries exist
-  if (!fs.existsSync(GMUXD) || !fs.existsSync(GMUX)) {
-    throw new Error(`Binaries not found. Run ./scripts/build.sh first.\n  GMUXD: ${GMUXD}\n  GMUX: ${GMUX}`)
+  // Build frontend + Go binaries so the embedded assets are always in sync
+  // with the current source.  Runs unconditionally — both Vite and `go build`
+  // are incremental, so a no-op rebuild finishes in seconds.
+  //
+  // Set E2E_SKIP_BUILD=1 to skip (e.g. in CI where builds are a separate job).
+  if (!process.env.E2E_SKIP_BUILD) {
+    console.log('\n[e2e] building gmux (E2E_SKIP_BUILD=1 to skip)…')
+    execSync('./scripts/build.sh', { cwd: ROOT, stdio: 'inherit' })
   }
 
   const port = await freePort()
