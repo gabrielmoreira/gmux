@@ -2,6 +2,23 @@
 
 Full commit-level changelogs are on each [GitHub release](https://github.com/gmuxapp/gmux/releases). This file tracks user-facing highlights only.
 
+## v0.4.4
+
+### Reliability
+
+- **Working indicator no longer gets stuck** — pi's `aborted` (Esc) and `error` stop reasons are now handled; previously only `stop` cleared the indicator
+- **Session titles appear reliably** — fixed a race between the file monitor and SSE subscriber that could silently overwrite title and status updates
+- **`/name` no longer clears working state** — store updates are now atomic (new `Store.Update` method), preventing concurrent goroutines from clobbering each other's fields
+- **Seamless daemon upgrade** — `gmux` detects version mismatches with the running daemon and replaces it automatically; Homebrew installs restart the daemon in the background during `brew upgrade`
+
+### Terminal
+
+- **Scroll-to-bottom after reconnect** — switching sessions no longer pins the view to old scrollback content
+
+### Paste
+
+- **Proper paste handling** — pasted text is sent correctly to the terminal
+
 ## v0.4.3
 
 ### Mobile
