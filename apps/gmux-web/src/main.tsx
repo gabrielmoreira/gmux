@@ -642,6 +642,55 @@ function MobileTerminalBar({
   // Send a sequence and re-focus the terminal (opens the keyboard on mobile).
   const tap = (seq: string) => { onSend(seq); onFocusTerminal() }
 
+  // ── Hold-to-repeat for ← / → ──────────────────────────────────────────
+  // Phase 1 (after 400 ms): repeat the arrow at ~50 ms (fast, like iOS key repeat).
+  // Phase 2 (after 400 + 700 ms): switch to word navigation at ~180 ms and light
+  // up the ctrl button so the user sees what is happening.
+  //
+  // Two pitfalls guarded against:
+  //  • Pointer leaving the button before release: solved with setPointerCapture so
+  //    pointerup always fires on the element that started the hold.
+  //  • Race between clearHold() and a queued timer callback calling setHoldWordMode(true):
+  //    solved with a generation counter — the callback checks gen before touching state.
+  const [holdWordMode, setHoldWordMode] = useState(false)
+  const holdTimer1   = useRef<ReturnType<typeof setTimeout>  | null>(null)
+  const holdTimer2   = useRef<ReturnType<typeof setTimeout>  | null>(null)
+  const holdInterval = useRef<ReturnType<typeof setInterval> | null>(null)
+  const holdGen      = useRef(0)
+
+  const clearHold = () => {
+    holdGen.current++                                                          // invalidate in-flight timer callbacks
+    if (holdTimer1.current)   { clearTimeout(holdTimer1.current);   holdTimer1.current   = null }
+    if (holdTimer2.current)   { clearTimeout(holdTimer2.current);   holdTimer2.current   = null }
+    if (holdInterval.current) { clearInterval(holdInterval.current); holdInterval.current = null }
+    setHoldWordMode(false)
+  }
+
+  // Clean up timers when the bar unmounts.
+  useEffect(() => () => clearHold(), [])
+
+  const startArrowHold = (arrowSeq: string, wordSeq: string) => {
+    const gen = holdGen.current
+    holdTimer1.current = setTimeout(() => {
+      if (holdGen.current !== gen) return
+      // Phase 1: fast arrow repeat
+      holdInterval.current = setInterval(() => tap(arrowSeq), 50)
+      // Phase 2: switch to word navigation
+      holdTimer2.current = setTimeout(() => {
+        if (holdGen.current !== gen) return          // clearHold already ran — don't override false→true
+        clearInterval(holdInterval.current!)
+        holdInterval.current = null
+        setHoldWordMode(true)
+        tap(wordSeq)
+        holdInterval.current = setInterval(() => tap(wordSeq), 180)
+      }, 700)
+    }, 400)
+  }
+
+  // showCtrl: ctrl button appears armed either because the user armed it, or
+  // because hold-repeat has entered word-navigation mode.
+  const showCtrl = ctrlArmed || holdWordMode
+
   return (
     <div class="mobile-bottom-bar" aria-label="Mobile terminal controls">
       <button
@@ -668,11 +717,11 @@ function MobileTerminalBar({
 
         {/* ctrl toggle */}
         <button
-          class={`mobile-bottom-action ${ctrlArmed ? 'armed' : ''}`}
+          class={`mobile-bottom-action ${showCtrl ? 'armed' : ''}`}
           disabled={!canSend}
-          onClick={() => { onToggleCtrl(); onFocusTerminal() }}
-          title={ctrlArmed ? 'Ctrl armed for next typed key' : 'Arm Ctrl for next typed key'}
-          aria-pressed={ctrlArmed}
+          onClick={() => { if (holdWordMode) { clearHold(); } else { onToggleCtrl(); } onFocusTerminal() }}
+          title={showCtrl ? 'Ctrl armed for next typed key' : 'Arm Ctrl for next typed key'}
+          aria-pressed={showCtrl}
         >
           ctrl
         </button>
@@ -688,17 +737,31 @@ function MobileTerminalBar({
           alt
         </button>
 
-        {/* Position 4: ←  ──or──  word-left when ctrl armed */}
-        {ctrlArmed
-          ? <button class="mobile-bottom-action" disabled={!canSend} onClick={() => tap('\x1b[1;5D')} title="Word left"><IconWordLeft /></button>
-          : <button class="mobile-bottom-action" disabled={!canSend} onClick={() => tap('\x1b[D')} title="Left arrow"><IconLeft /></button>
-        }
+        {/* Position 4: ←  ──or──  word-left when ctrl/hold-word active; hold to repeat → word-skip */}
+        <button
+          class="mobile-bottom-action"
+          disabled={!canSend}
+          onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault(); const s = showCtrl ? '\x1b[1;5D' : '\x1b[D'; tap(s); startArrowHold(s, '\x1b[1;5D') }}
+          onPointerUp={clearHold}
+          onPointerCancel={clearHold}
+          onContextMenu={e => e.preventDefault()}
+          title={showCtrl ? 'Word left' : 'Left arrow (hold to repeat)'}
+        >
+          {showCtrl ? <IconWordLeft /> : <IconLeft />}
+        </button>
 
-        {/* Position 5: →  ──or──  word-right when ctrl armed */}
-        {ctrlArmed
-          ? <button class="mobile-bottom-action" disabled={!canSend} onClick={() => tap('\x1b[1;5C')} title="Word right"><IconWordRight /></button>
-          : <button class="mobile-bottom-action" disabled={!canSend} onClick={() => tap('\x1b[C')} title="Right arrow"><IconRight /></button>
-        }
+        {/* Position 5: →  ──or──  word-right when ctrl/hold-word active; hold to repeat → word-skip */}
+        <button
+          class="mobile-bottom-action"
+          disabled={!canSend}
+          onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault(); const s = showCtrl ? '\x1b[1;5C' : '\x1b[C'; tap(s); startArrowHold(s, '\x1b[1;5C') }}
+          onPointerUp={clearHold}
+          onPointerCancel={clearHold}
+          onContextMenu={e => e.preventDefault()}
+          title={showCtrl ? 'Word right' : 'Right arrow (hold to repeat)'}
+        >
+          {showCtrl ? <IconWordRight /> : <IconRight />}
+        </button>
 
         <button class="mobile-bottom-action" disabled={!canSend} onClick={() => tap('\n')} title="Enter"><IconReturn /></button>
       </div>
