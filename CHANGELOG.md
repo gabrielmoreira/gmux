@@ -2,6 +2,12 @@
 
 Full commit-level changelogs are on each [GitHub release](https://github.com/gmuxapp/gmux/releases). This file tracks user-facing highlights only.
 
+## v0.4.3
+
+### Mobile
+
+v0.4.3 rounds out the mobile terminal keyboard. The toolbar gains an **Alt modifier button** that works identically to Ctrl — arm it, type a key, send the escape-prefixed sequence. Holding **← or →** now repeats the arrow at iOS key-repeat speed; keep holding and it shifts into word-navigation mode, lighting up the Ctrl button as a visual cue. A **background-activity dot** appears on the hamburger menu when another session is busy (blue) or has unread output (yellow). Several smaller fixes: Backspace now correctly sends Ctrl+H when Ctrl is armed, Esc refocuses the terminal after sending, and the End scroll button is taller to match the toolbar.
+
 ## v0.4.1
 
 ### Terminal
