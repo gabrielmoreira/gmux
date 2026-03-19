@@ -739,14 +739,15 @@ body {
   position: absolute;
   bottom: 12px;
   right: 16px;
-  padding: 5px 12px;
-  border-radius: 20px;
-  border: 1px solid oklch(from var(--border) l c h / 0.6);
-  background: oklch(from #1a2233 l c h / 0.72);
-  color: var(--text-muted);
-  font-size: 12px;
-  font-family: inherit;
-  letter-spacing: 0.03em;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid oklch(from var(--border-strong) l c h / 0.7);
+  background: oklch(from var(--bg-surface) l c h / 0.38);
+  color: oklch(76% 0.012 250 / 0.85);
+  font-size: 13px;
+  font-family: 'Source Sans 3', sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   cursor: pointer;
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
@@ -756,8 +757,8 @@ body {
 }
 
 .terminal-scroll-end:hover {
-  background: oklch(from #1a2233 l c h / 0.92);
-  color: var(--text);
+  background: oklch(from var(--bg-surface) l c h / 0.92);
+  color: oklch(76% 0.012 250);
 }
 
 .terminal-loading-dot {
@@ -1026,7 +1027,7 @@ body {
     background: var(--bg-surface);
     color: oklch(76% 0.012 250);
     border-radius: 6px;
-    min-height: 36px;
+    min-height: 40px;
     min-width: 36px;
     padding: 0 10px;
     flex: 0 0 auto;
