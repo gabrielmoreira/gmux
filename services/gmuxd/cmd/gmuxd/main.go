@@ -25,6 +25,7 @@ import (
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/sessionfiles"
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/store"
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/tsauth"
+	"github.com/gmuxapp/gmux/services/gmuxd/internal/update"
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/wsproxy"
 )
 
@@ -316,6 +317,9 @@ func serve(replace bool, stderr io.Writer) int {
 	go scanner.Run(30*time.Second, stopScanner)
 	defer close(stopScanner)
 
+	// Start background update checker
+	updateChecker := update.New(version)
+
 	mux := http.NewServeMux()
 
 	// tsListener is set below if tailscale is enabled. Declared here so
@@ -335,6 +339,9 @@ func serve(replace bool, stderr io.Writer) int {
 			if fqdn := tsListener.FQDN(); fqdn != "" {
 				data["tailscale_url"] = "https://" + fqdn
 			}
+		}
+		if v := updateChecker.Available(); v != "" {
+			data["update_available"] = v
 		}
 		writeJSON(w, map[string]any{"ok": true, "data": data})
 	})

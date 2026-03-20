@@ -96,6 +96,7 @@ interface LaunchConfig {
 interface HealthData {
   version: string
   tailscale_url?: string
+  update_available?: string
 }
 
 let _healthCache: HealthData | null = null
@@ -420,6 +421,7 @@ function Sidebar({
   onShowFolder,
   open,
   onClose,
+  health,
 }: {
   folders: Folder[]
   hiddenFolders: Folder[]
@@ -431,6 +433,7 @@ function Sidebar({
   onShowFolder: (cwd: string) => void
   open: boolean
   onClose: () => void
+  health: HealthData | null
 }) {
   const [showFolderPicker, setShowFolderPicker] = useState(false)
 
@@ -440,7 +443,13 @@ function Sidebar({
       <aside class={`sidebar ${open ? 'open' : ''}`}>
         <div class="sidebar-header">
           <div class="sidebar-logo">gmux</div>
-          <div class="sidebar-badge">alpha</div>
+          {health?.update_available ? (
+            <a class="sidebar-badge sidebar-badge-update" href="https://gmux.app/quick-start/" target="_blank" title="Update available - safe to update while sessions are running">
+              {health.version} &rarr; {health.update_available}
+            </a>
+          ) : (
+            <div class="sidebar-badge">{health?.version ?? ''}</div>
+          )}
           <LaunchButton className="sidebar-launch-btn" onLaunch={onClose} />
         </div>
         <div class="sidebar-scroll">
@@ -1034,6 +1043,7 @@ function App() {
         onShowFolder={(cwd) => sidebarState.showFolder(cwd)}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        health={health}
       />
 
       <div class="main-panel">

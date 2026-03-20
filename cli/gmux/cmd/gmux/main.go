@@ -80,6 +80,9 @@ func main() {
 		if tsURL := parseTailscaleURL(healthBody); tsURL != "" {
 			fmt.Fprintf(os.Stderr, "  remote: %s\n", maskTailscaleURL(tsURL))
 		}
+		if updateVer := parseUpdateAvailable(healthBody); updateVer != "" {
+			fmt.Fprintf(os.Stderr, "  update: %s available — %s\n", updateVer, upgradeHint())
+		}
 
 		openBrowser(gmuxdAddr)
 		return
@@ -584,6 +587,37 @@ func parseTailscaleURL(body []byte) string {
 		return resp.Data.TailscaleURL
 	}
 	return ""
+}
+
+// parseUpdateAvailable extracts update_available from a /v1/health JSON response.
+func parseUpdateAvailable(body []byte) string {
+	var resp struct {
+		Data struct {
+			UpdateAvailable string `json:"update_available"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(body, &resp) == nil {
+		return resp.Data.UpdateAvailable
+	}
+	return ""
+}
+
+// upgradeHint returns the appropriate upgrade command based on how gmux was installed.
+func upgradeHint() string {
+	self, err := os.Executable()
+	if err != nil {
+		return "curl -sSfL https://gmux.app/install.sh | sh"
+	}
+	// Resolve symlinks to find the real binary location
+	real, err := filepath.EvalSymlinks(self)
+	if err != nil {
+		real = self
+	}
+	// Check if we're inside a Homebrew prefix
+	if strings.Contains(real, "/Cellar/") || strings.Contains(real, "/homebrew/") {
+		return "brew upgrade gmuxapp/tap/gmux"
+	}
+	return "curl -sSfL https://gmux.app/install.sh | sh"
 }
 
 // maskTailscaleURL masks the tailnet name for privacy.

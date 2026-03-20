@@ -121,6 +121,17 @@ body {
   transform: translateY(2px);
 }
 
+.sidebar-badge-update {
+  background: oklch(30% 0.08 145);
+  color: oklch(85% 0.1 145);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.sidebar-badge-update:hover {
+  background: oklch(35% 0.1 145);
+}
+
 .sidebar-scroll {
   flex: 1;
   overflow-y: auto;

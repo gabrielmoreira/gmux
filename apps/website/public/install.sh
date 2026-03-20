@@ -58,7 +58,7 @@ main() {
   arch="$(detect_arch)"
   version="$(resolve_version)"
 
-  # Darwin archives are .zip, Linux are .tar.gz (goreleaser config)
+  # Darwin archives are .zip, Linux are .tar.gz
   case "$os" in
     darwin) ext=zip    ; need unzip ;;
     *)      ext=tar.gz ; need tar   ;;
@@ -92,6 +92,13 @@ main() {
   install -m 755 "${tmpdir}/gmuxd" "${INSTALL_DIR}/gmuxd"
 
   echo "Installed gmux and gmuxd to ${INSTALL_DIR}"
+
+  # If gmuxd was already running, restart it
+  # Running sessions are not affected, they reconnect automatically.
+  if curl -sSf http://localhost:8790/v1/health > /dev/null 2>&1; then
+    "${INSTALL_DIR}/gmuxd" start --replace 2>/dev/null || true
+    echo "Restarted gmuxd (running sessions are safe)"
+  fi
 
   case ":${PATH}:" in
     *":${INSTALL_DIR}:"*) ;;
