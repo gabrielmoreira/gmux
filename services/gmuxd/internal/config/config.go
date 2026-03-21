@@ -43,7 +43,7 @@ type TailscaleConfig struct {
 func Load() (Config, error) {
 	cfg := defaults()
 
-	path := configPath()
+	path := Path()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -115,7 +115,8 @@ func defaults() Config {
 	}
 }
 
-func configPath() string {
+// Path returns the path to the config file.
+func Path() string {
 	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" {
 		return filepath.Join(dir, "gmux", "config.toml")
 	}

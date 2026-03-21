@@ -31,6 +31,24 @@ type Config struct {
 	Allow    []string // tailscale login names (e.g. "user@github")
 }
 
+// DiagStatus contains diagnostic information about the Tailscale connection.
+type DiagStatus struct {
+	// FQDN is the full tailnet DNS name (e.g. "gmux.tailnet.ts.net").
+	// Empty if not yet connected.
+	FQDN string `json:"fqdn,omitempty"`
+	// MagicDNS indicates whether MagicDNS is enabled in the tailnet.
+	// Without it, the FQDN won't resolve from other devices.
+	MagicDNS bool `json:"magic_dns"`
+	// HTTPS indicates whether HTTPS certificates are available.
+	// Without it, the browser will refuse to connect.
+	HTTPS bool `json:"https"`
+	// AuthURL is set when the node needs login. The user must visit
+	// this URL to register the device in their tailnet.
+	AuthURL string `json:"auth_url,omitempty"`
+	// Connected is true when the listener is fully operational.
+	Connected bool `json:"connected"`
+}
+
 // Listener manages a tsnet server and its HTTPS listener.
 type Listener struct {
 	srv  *tsnet.Server
@@ -42,6 +60,32 @@ type Listener struct {
 // FQDN returns the full tailnet DNS name (e.g. "gmuxd.angler-map.ts.net")
 // once the listener is ready. Returns "" if tailscale hasn't connected yet.
 func (l *Listener) FQDN() string { return l.fqdn }
+
+// Diag returns diagnostic status about the Tailscale connection.
+// Safe to call at any time, including before the listener is ready.
+func (l *Listener) Diag() DiagStatus {
+	ds := DiagStatus{
+		FQDN:      l.fqdn,
+		Connected: l.fqdn != "",
+	}
+	if l.lc == nil {
+		return ds
+	}
+	status, err := l.lc.Status(context.Background())
+	if err != nil {
+		return ds
+	}
+	if status.AuthURL != "" {
+		ds.AuthURL = status.AuthURL
+	}
+	ds.HTTPS = len(status.CertDomains) > 0
+	if status.CurrentTailnet != nil {
+		ds.MagicDNS = status.CurrentTailnet.MagicDNSSuffix != ""
+	} else {
+		ds.MagicDNS = status.MagicDNSSuffix != ""
+	}
+	return ds
+}
 
 // Start joins the tailnet and begins serving handler over HTTPS on :443.
 // The tailscale login and listener startup happen in the background so

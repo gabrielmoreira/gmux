@@ -570,10 +570,14 @@ function EmptyState({ launchers, health }: { launchers: LauncherDef[]; health: H
       <div class="empty-state-bottom">
         {!tailscaleURL?.includes(location.host) &&<>
           <span>http://{location.host}</span>
-          <span class="empty-state-dot" />
+          {tailscaleURL && <span class="empty-state-dot" />}
         </>}
-        {tailscaleURL &&
-          <span>{maskTailnet(tailscaleURL)}</span>
+        {tailscaleURL
+          ? <span>{maskTailnet(tailscaleURL)}</span>
+          : <>
+              <span class="empty-state-dot" />
+              <span>run <code>gmuxd remote</code> to enable remote access</span>
+            </>
         }
       </div>
     </div>

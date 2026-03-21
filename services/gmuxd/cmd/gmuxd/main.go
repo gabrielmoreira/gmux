@@ -151,7 +151,21 @@ func launchGmux(gmuxBin string, command []string, cwd string) (int, error) {
 }
 
 func printUsage(w io.Writer) {
-	_, _ = fmt.Fprintf(w, "gmuxd %s\n\nUsage: gmuxd <command> [options]\n\nCommands:\n  start [--replace]  Start the gmux daemon\n  shutdown           Ask the running gmux daemon to stop\n  version            Show gmuxd version\n  help               Show this help\n\nTip:\n  gmux <command>     Run a command; gmux auto-starts gmuxd if needed\n  More help: https://gmux.app\n", version)
+	_, _ = fmt.Fprintf(w, `gmuxd %s
+
+Usage: gmuxd <command> [options]
+
+Commands:
+  start [--replace]  Start the gmux daemon
+  remote             Set up or check remote access via Tailscale
+  shutdown           Ask the running gmux daemon to stop
+  version            Show gmuxd version
+  help               Show this help
+
+Tip:
+  gmux <command>     Run a command; gmux auto-starts gmuxd if needed
+  More help: https://gmux.app
+`, version)
 }
 
 func daemonAddr() (string, error) {
@@ -214,6 +228,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 			}
 		}
 		return serve(replace, stderr)
+	case "remote":
+		if len(args) > 0 {
+			_, _ = fmt.Fprintf(stderr, "gmuxd remote: unexpected arguments: %s\n", strings.Join(args, " "))
+			return 2
+		}
+		return runRemote(stdout, stderr)
 	case "shutdown":
 		if len(args) > 0 {
 			_, _ = fmt.Fprintf(stderr, "gmuxd shutdown: unexpected arguments: %s\n", strings.Join(args, " "))
@@ -359,9 +379,11 @@ func serve(replace bool, stderr io.Writer) int {
 			"status":  "ready",
 		}
 		if tsListener != nil {
-			if fqdn := tsListener.FQDN(); fqdn != "" {
-				data["tailscale_url"] = "https://" + fqdn
+			diag := tsListener.Diag()
+			if diag.FQDN != "" {
+				data["tailscale_url"] = "https://" + diag.FQDN
 			}
+			data["tailscale"] = diag
 		}
 		if v := updateChecker.Available(); v != "" {
 			data["update_available"] = v
