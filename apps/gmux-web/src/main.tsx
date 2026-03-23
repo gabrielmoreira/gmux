@@ -1,5 +1,6 @@
 import { render } from 'preact'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { LocationProvider, Router, Route, lazy } from 'preact-iso'
 import '@xterm/xterm/css/xterm.css'
 import './styles.css'
 import { createSidebarState } from './sidebar-state'
@@ -13,6 +14,9 @@ import { groupByFolder } from './types'
 import { getMockFolders } from './mock-data/index'
 import { installCopySession } from './mock-data/export-session'
 import type { Session as ProtocolSession } from '@gmux/protocol'
+
+// Lazy-loaded routes (code-split, not bundled with the main app)
+const InputDiagnostics = lazy(() => import('./input-diagnostics'))
 
 // ── Config ──
 
@@ -1227,4 +1231,14 @@ function App() {
   )
 }
 
-render(<App />, document.getElementById('app')!)
+render(
+  <LocationProvider>
+    <Router>
+      <Route path="/_/input-diagnostics" component={InputDiagnostics} />
+      <Route path="/" component={App} />
+      {/* Catch-all: render App for any unmatched path (e.g. /session/:id in the future) */}
+      <App default />
+    </Router>
+  </LocationProvider>,
+  document.getElementById('app')!,
+)
