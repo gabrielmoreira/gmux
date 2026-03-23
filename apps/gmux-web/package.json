@@ -21,7 +21,8 @@
     "@xterm/addon-image": "github:mgabor3141/xterm.js#fix/image-addon-hidpi&path:addons/addon-image",
     "@xterm/addon-webgl": "0.20.0-beta.194",
     "@xterm/xterm": "6.1.0-beta.195",
-    "preact": "^10.26.4"
+    "preact": "^10.26.4",
+    "preact-iso": "^2.11.1"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.2",
