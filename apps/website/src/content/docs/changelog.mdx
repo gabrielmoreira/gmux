@@ -31,6 +31,19 @@ Or download binaries directly from [GitHub Releases](https://github.com/gmuxapp/
 
 ---
 
+## v0.5.1
+
+### Performance
+
+- **Faster reconnects for long sessions.** Redundant SIGWINCH signals on reconnect caused TUI apps (opencode, pi, Claude Code) to redraw their entire screen on top of the scrollback replay. Resizes that don't change the terminal dimensions are now skipped.
+- **Coalesced terminal output.** PTY output is batched (up to 8ms/32KB) before sending to the browser, reducing WebSocket overhead during heavy output.
+
+### Dev tooling
+
+- **Isolated dev environments.** `dev-server.sh` and `dev-session.sh` (renamed from `dev.sh`/`dev-env.sh`) now derive ports, socket dirs, and state dirs from the worktree path. Multiple grove worktrees run simultaneously without collisions.
+
+---
+
 ## v0.5.0
 
 ### Notifications
