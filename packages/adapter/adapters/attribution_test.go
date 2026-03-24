@@ -72,46 +72,39 @@ func TestTail(t *testing.T) {
 	}
 }
 
-// --- attributeByScrollback ---
+// --- attributeByScrollbackNormalized ---
 
-func TestAttributeByScrollbackSingleMatch(t *testing.T) {
+func TestAttributeByScrollbackNormalizedCleaning(t *testing.T) {
+	// File has markdown backticks, double spaces, and newlines.
+	// Scrollback has box-drawing borders and collapsed whitespace.
+	// After cleaning, the underlying text should match.
 	candidates := []adapter.FileCandidate{
-		{SessionID: "a", Scrollback: "completely different text"},
-		{SessionID: "b", Scrollback: "Let me fix the auth bug for you"},
+		{SessionID: "wrong", Scrollback: "completely unrelated text about something else entirely and more words"},
+		{SessionID: "right", Scrollback: "───── Working copy (@) now at: abc123 Committed as def456 ─────"},
 	}
-	id := attributeByScrollback("fix the auth bug", candidates)
-	if id != "b" {
-		t.Fatalf("expected 'b', got %q", id)
+	fileText := "Working copy  (@) now at: abc123\nCommitted as `def456`."
+	id := attributeByScrollbackNormalized(fileText, candidates)
+	if id != "right" {
+		t.Fatalf("expected 'right' (cleaned match), got %q", id)
 	}
 }
 
-func TestAttributeByScrollbackNoMatch(t *testing.T) {
+func TestAttributeByScrollbackNormalizedRejectsShort(t *testing.T) {
+	// Very short file text (< 20 chars after cleaning) should be rejected
+	// to avoid false matches on content like "hi" or "ok".
 	candidates := []adapter.FileCandidate{
-		{SessionID: "a", Scrollback: "aaaaa bbbbb"},
-		{SessionID: "b", Scrollback: "ccccc ddddd"},
+		{SessionID: "a", Scrollback: "hi there how are you doing today"},
 	}
-	id := attributeByScrollback("xxxxx yyyyy zzzzz", candidates)
+	id := attributeByScrollbackNormalized("hi", candidates)
 	if id != "" {
-		t.Fatalf("expected empty (no match), got %q", id)
+		t.Fatalf("expected empty (too short), got %q", id)
 	}
 }
 
-func TestAttributeByScrollbackEmptyFile(t *testing.T) {
-	candidates := []adapter.FileCandidate{
-		{SessionID: "a", Scrollback: "hello"},
-	}
-	if id := attributeByScrollback("", candidates); id != "" {
-		t.Fatalf("expected empty, got %q", id)
-	}
-}
-
-func TestAttributeByScrollbackNoScrollback(t *testing.T) {
-	candidates := []adapter.FileCandidate{
-		{SessionID: "a", Scrollback: ""},
-		{SessionID: "b", Scrollback: ""},
-	}
-	if id := attributeByScrollback("hello world", candidates); id != "" {
-		t.Fatalf("expected empty, got %q", id)
+func TestCleanForMatching(t *testing.T) {
+	got := cleanForMatching("──── `hello`  **world**\n\tfoo ────")
+	if got != "hello world foo" {
+		t.Fatalf("expected cleaned text, got %q", got)
 	}
 }
 
@@ -190,24 +183,105 @@ func TestAttributeByMetadataNilInfo(t *testing.T) {
 
 // --- Pi AttributeFile ---
 
-func TestPiAttributeFile(t *testing.T) {
+func TestPiAttributeFileContentMatch(t *testing.T) {
+	// Scrollback has overlapping content with tool output in the file.
+	// This is the primary attribution mechanism for pi.
 	candidates := []adapter.FileCandidate{
-		{SessionID: "a", Scrollback: "completely unrelated text"},
-		{SessionID: "b", Scrollback: "user: fix the auth bug\nassistant: I'll fix that"},
+		{SessionID: "wrong", Scrollback: "completely unrelated text about cooking recipes and more words to fill space"},
+		{SessionID: "right", Scrollback: "───── Working copy (@) now at: sxpovqxo 395e26fa Committed as 05c82cde ─────"},
 	}
 	pi := NewPi()
-	// Create a temp file with pi JSONL content
 	dir := t.TempDir()
 	path := dir + "/test.jsonl"
 	content := `{"type":"session","id":"s1","cwd":"/tmp","timestamp":"2026-01-01T00:00:00Z"}
-{"type":"message","role":"user","message":{"content":[{"type":"text","text":"fix the auth bug"}]}}
+{"type":"message","id":"tr1","message":{"role":"toolResult","content":"Working copy  (@) now at: sxpovqxo 395e26fa (empty)\nParent commit (@-)      : orozwtmt 05c82cde"}}
+{"type":"message","id":"a1","message":{"role":"assistant","content":[{"type":"text","text":"Committed as 05c82cde."}]}}
 `
 	if err := writeFile(path, content); err != nil {
 		t.Fatal(err)
 	}
 	id := pi.AttributeFile(path, candidates)
-	if id != "b" {
-		t.Fatalf("expected 'b', got %q", id)
+	if id != "right" {
+		t.Fatalf("expected 'right' (content match), got %q", id)
+	}
+}
+
+func TestPiAttributeFileNoScrollback(t *testing.T) {
+	// No scrollback available: return "" (session may be idle or just started).
+	candidates := []adapter.FileCandidate{
+		{SessionID: "a", Scrollback: ""},
+		{SessionID: "b", Scrollback: ""},
+	}
+	pi := NewPi()
+	dir := t.TempDir()
+	path := dir + "/test.jsonl"
+	content := `{"type":"session","id":"s1","cwd":"/tmp","timestamp":"2026-01-01T00:00:00Z"}
+{"type":"message","id":"u1","message":{"role":"user","content":[{"type":"text","text":"fix the auth bug in the login handler please"}]}}
+`
+	if err := writeFile(path, content); err != nil {
+		t.Fatal(err)
+	}
+	id := pi.AttributeFile(path, candidates)
+	if id != "" {
+		t.Fatalf("expected empty (no scrollback), got %q", id)
+	}
+}
+
+func TestPiAttributeFileRejectsShortContent(t *testing.T) {
+	// Very short file content should be rejected to avoid false matches.
+	candidates := []adapter.FileCandidate{
+		{SessionID: "a", Scrollback: "hi there how are you doing today"},
+	}
+	pi := NewPi()
+	dir := t.TempDir()
+	path := dir + "/test.jsonl"
+	content := `{"type":"session","id":"s1","cwd":"/tmp","timestamp":"2026-01-01T00:00:00Z"}
+{"type":"message","id":"u1","message":{"role":"user","content":"hi"}}
+`
+	if err := writeFile(path, content); err != nil {
+		t.Fatal(err)
+	}
+	id := pi.AttributeFile(path, candidates)
+	if id != "" {
+		t.Fatalf("expected empty (content too short for reliable match), got %q", id)
+	}
+}
+
+func TestPiAttributeFileDisambiguatesSharedDir(t *testing.T) {
+	// Two sessions in the same cwd, each with distinct scrollback.
+	// The file's tool output matches one session's scrollback.
+	candidates := []adapter.FileCandidate{
+		{SessionID: "session-a", Scrollback: "── $ go test ./... ok pkg/auth 0.3s ok pkg/store 0.1s ──"},
+		{SessionID: "session-b", Scrollback: "── $ jj diff --stat api/handler.go 42 +++--- Committed as abc123 ──"},
+	}
+	pi := NewPi()
+
+	// File A: contains go test output matching session-a's scrollback.
+	dirA := t.TempDir()
+	pathA := dirA + "/fileA.jsonl"
+	writeFile(pathA, `{"type":"session","id":"s1","cwd":"/tmp","timestamp":"2026-01-01T00:00:00Z"}
+{"type":"message","id":"u1","message":{"role":"user","content":[{"type":"text","text":"run all tests"}]}}
+{"type":"message","id":"tr1","message":{"role":"toolResult","content":"ok pkg/auth 0.3s\nok pkg/store 0.1s"}}
+{"type":"message","id":"a1","message":{"role":"assistant","content":[{"type":"text","text":"All packages pass."}]}}
+`)
+
+	// File B: contains jj output matching session-b's scrollback.
+	dirB := t.TempDir()
+	pathB := dirB + "/fileB.jsonl"
+	writeFile(pathB, `{"type":"session","id":"s2","cwd":"/tmp","timestamp":"2026-01-01T00:00:00Z"}
+{"type":"message","id":"u2","message":{"role":"user","content":[{"type":"text","text":"check the diff and commit"}]}}
+{"type":"message","id":"tr2","message":{"role":"toolResult","content":"api/handler.go | 42 +++---"}}
+{"type":"message","id":"a2","message":{"role":"assistant","content":[{"type":"text","text":"Committed as abc123."}]}}
+`)
+
+	idA := pi.AttributeFile(pathA, candidates)
+	idB := pi.AttributeFile(pathB, candidates)
+
+	if idA != "session-a" {
+		t.Errorf("file A: expected session-a, got %q", idA)
+	}
+	if idB != "session-b" {
+		t.Errorf("file B: expected session-b, got %q", idB)
 	}
 }
 

@@ -1,6 +1,8 @@
 package adapters
 
 import (
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/gmuxapp/gmux/packages/adapter"
@@ -8,14 +10,26 @@ import (
 
 // --- Shared attribution helpers ---
 
-// attributeByScrollback picks the candidate whose scrollback text best
-// matches the file text. Returns "" if no candidate scores above the
-// threshold. Used by adapters with per-cwd directories (pi, claude).
-func attributeByScrollback(fileText string, candidates []adapter.FileCandidate) string {
+// attributeByScrollbackNormalized matches a file to a session by
+// comparing conversation text against terminal scrollback, after
+// stripping TUI chrome and normalizing formatting.
+// Both the file text and scrollback represent the same conversation,
+// but the scrollback is a terminal rendering with box-drawing borders,
+// status bars, and collapsed whitespace, while the file text is raw
+// JSONL content with markdown formatting and newlines. Cleaning both
+// sides makes the underlying conversation text match.
+//
+// Uses a 200-char file tail (not 500) because the scrollback is a
+// narrow window and a shorter tail is more likely to overlap with
+// the visible screen.
+func attributeByScrollbackNormalized(fileText string, candidates []adapter.FileCandidate) string {
 	if fileText == "" {
 		return ""
 	}
-	fileTail := tail(fileText, 500)
+	fileTail := cleanForMatching(tail(fileText, 200))
+	if len(fileTail) < 20 {
+		return "" // too short for reliable matching
+	}
 
 	bestID := ""
 	bestScore := 0.0
@@ -24,7 +38,8 @@ func attributeByScrollback(fileText string, candidates []adapter.FileCandidate) 
 		if c.Scrollback == "" {
 			continue
 		}
-		score := similarityScore(fileTail, tail(c.Scrollback, 2000))
+		sbTail := cleanForMatching(tail(c.Scrollback, 2000))
+		score := similarityScore(fileTail, sbTail)
 		if score > bestScore {
 			bestScore = score
 			bestID = c.SessionID
@@ -35,6 +50,20 @@ func attributeByScrollback(fileText string, candidates []adapter.FileCandidate) 
 		return ""
 	}
 	return bestID
+}
+
+// boxDrawing matches box-drawing characters used by TUI borders.
+var boxDrawing = regexp.MustCompile("[─━│┌┐└┘├┤┬┴┼╭╮╰╯║═╔╗╚╝╠╣╦╩╬]+")
+
+// cleanForMatching strips TUI chrome (box-drawing borders), markdown
+// formatting (backticks, bold markers), and collapses whitespace.
+// This brings terminal-rendered text and JSONL source text into the
+// same form for LCS comparison.
+func cleanForMatching(s string) string {
+	s = boxDrawing.ReplaceAllString(s, " ")
+	s = strings.ReplaceAll(s, "`", "")
+	s = strings.ReplaceAll(s, "*", "")
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // attributeByMetadata picks the candidate whose cwd and start time best
