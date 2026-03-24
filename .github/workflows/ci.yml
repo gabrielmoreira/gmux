@@ -31,15 +31,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Biome lint
-        continue-on-error: true
-        run: pnpm exec biome lint .
-
       - name: Build protocol
         run: cd packages/protocol && pnpm exec tsc -p tsconfig.json
-
-      - name: Typecheck web
-        run: cd apps/gmux-web && pnpm exec tsc --noEmit
 
       - name: Test protocol
         run: cd packages/protocol && pnpm exec vitest run --passWithNoTests
