@@ -4,7 +4,9 @@ import { FitAddon } from '@xterm/addon-fit'
 import { ImageAddon } from '@xterm/addon-image'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
-import { attachKeyboardHandler, attachPasteHandler } from './keyboard'
+import type { ITerminalOptions } from '@xterm/xterm'
+import { attachKeyboardHandler, attachPasteHandler, formatPasteText } from './keyboard'
+import { DEFAULT_THEME_COLORS, type ResolvedKeybind } from './config'
 import { attachMobileInputHandler } from './mobile-input'
 import { createReplayBuffer } from './replay'
 import { createTerminalIO, type TerminalSize } from './terminal-io'
@@ -23,29 +25,11 @@ function loadPreferredRenderer(term: Terminal) {
   }
 }
 
-export const TERM_THEME = {
-  background: '#0f141a',            // --bg-surface
-  foreground: '#d3d8de',            // --text
-  cursor: '#d3d8de',                // --text
-  cursorAccent: '#0f141a',          // --bg-surface
-  selectionBackground: '#2a3a4acc', // visible selection with slight blue tint
-  black: '#151b21',                 // --border
-  red: '#c25d66',
-  green: '#a3be8c',
-  yellow: '#ebcb8b',
-  blue: '#81a1c1',
-  magenta: '#b48ead',
-  cyan: '#49b8b8',                  // --accent
-  white: '#d3d8de',                 // --text
-  brightBlack: '#595e63',           // --text-muted
-  brightRed: '#d06c75',
-  brightGreen: '#b4d19a',
-  brightYellow: '#f0d9a0',
-  brightBlue: '#93b3d1',
-  brightMagenta: '#c9a3c4',
-  brightCyan: '#5fcece',
-  brightWhite: '#eceff4',
-}
+/**
+ * Re-export for backward compat (used by input-diagnostics.tsx).
+ * The actual colors now live in config.ts as DEFAULT_THEME_COLORS.
+ */
+export const TERM_THEME = DEFAULT_THEME_COLORS
 
 // ── Utilities ──
 
@@ -209,19 +193,25 @@ function focusTerminalInput(term: Terminal | null): void {
 
 export function TerminalView({
   session,
+  terminalOptions,
+  keybinds,
   ctrlArmed,
   onCtrlConsumed,
   altArmed,
   onAltConsumed,
   onInputReady,
+  onPasteReady,
   onFocusReady,
 }: {
   session: Session
+  terminalOptions: ITerminalOptions
+  keybinds: ResolvedKeybind[]
   ctrlArmed: boolean
   onCtrlConsumed: () => void
   altArmed: boolean
   onAltConsumed: () => void
   onInputReady?: (send: ((data: string) => void) | null) => void
+  onPasteReady?: (paste: ((text: string) => void) | null) => void
   onFocusReady?: (focus: (() => void) | null) => void
 }) {
   const shellRef = useRef<HTMLDivElement>(null)
@@ -304,13 +294,9 @@ export function TerminalView({
     if (!containerRef.current || USE_MOCK) return
     disposed.current = false
 
+    // Add non-serializable options that can't live in JSON config.
     const term = new Terminal({
-      theme: TERM_THEME,
-      fontFamily: "'Fira Code', monospace",
-      fontSize: 13,
-      cursorBlink: true,
-      // Handle OSC 8 hyperlinks (program-emitted links): open in a new tab.
-      // Without this, xterm shows a confirm() dialog with a security warning.
+      ...terminalOptions,
       linkHandler: {
         activate(_event, text) {
           window.open(text, '_blank', 'noopener')
@@ -369,10 +355,13 @@ export function TerminalView({
     }
 
     onInputReady?.(sendRawInput)
+    onPasteReady?.((text: string) => {
+      sendRawInput(formatPasteText(text, term.modes.bracketedPasteMode))
+    })
     onFocusReady?.(() => focusTerminalInput(term))
 
     const dataDisposable = term.onData((data) => sendInput(data))
-    attachKeyboardHandler(term, sendInput)
+    attachKeyboardHandler(term, sendInput, keybinds)
     const disposePasteHandler = attachPasteHandler(term, containerRef.current!, sendRawInput)
     const disposeMobileHandler = attachMobileInputHandler(term, containerRef.current!, sendRawInput)
 
@@ -559,6 +548,7 @@ export function TerminalView({
       wsRef.current?.close()
       wsRef.current = null
       onInputReady?.(null)
+      onPasteReady?.(null)
       onFocusReady?.(null)
       if ((window as any).__gmuxTerm === term) (window as any).__gmuxTerm = null
       term.dispose()
