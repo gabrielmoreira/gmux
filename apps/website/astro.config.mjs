@@ -24,8 +24,14 @@ export default defineConfig({
           items: [
             { label: 'Introduction', slug: 'introduction' },
             { label: 'Quick Start', slug: 'quick-start' },
+          ],
+        },
+        {
+          label: 'Guides',
+          items: [
             { label: 'Using the UI', slug: 'using-the-ui' },
             { label: 'Remote Access', slug: 'remote-access' },
+            { label: 'Running in Docker', slug: 'running-in-docker' },
             { label: 'Configuration', slug: 'configuration' },
             { label: 'Troubleshooting', slug: 'troubleshooting' },
           ],
@@ -40,32 +46,15 @@ export default defineConfig({
         },
         {
           label: 'Integrations',
-          items: [
-            { label: 'Claude Code', slug: 'integrations/claude-code' },
-            { label: 'Codex', slug: 'integrations/codex' },
-            { label: 'pi', slug: 'integrations/pi' },
-          ],
+          autogenerate: { directory: 'integrations' },
         },
         {
           label: 'Develop',
-          items: [
-            { label: 'State Management', slug: 'develop/state-management' },
-            { label: 'Session Schema', slug: 'develop/session-schema' },
-            { label: 'Adapter Architecture', slug: 'develop/adapter-architecture' },
-            { label: 'Writing an Adapter', slug: 'develop/writing-adapters' },
-            { label: 'Integration Tests', slug: 'develop/integration-tests' },
-            { label: 'Terminal Data Pipeline', slug: 'develop/terminal-data-pipeline' },
-            { label: 'Network Listener', slug: 'develop/network-listener' },
-          ],
+          autogenerate: { directory: 'develop' },
         },
         {
           label: 'Planned',
-          items: [
-            { label: 'Session Persistence', slug: 'planned/session-persistence' },
-            { label: 'Probes', slug: 'planned/probes' },
-            { label: 'Notifications', slug: 'planned/notifications' },
-            { label: 'Mobile Notifications', slug: 'planned/mobile-notifications' },
-          ],
+          autogenerate: { directory: 'planned' },
         },
       ],
       components: {
