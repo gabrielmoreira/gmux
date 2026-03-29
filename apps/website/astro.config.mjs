@@ -50,10 +50,12 @@ export default defineConfig({
         },
         {
           label: 'Develop',
+          collapsed: true,
           autogenerate: { directory: 'develop' },
         },
         {
           label: 'Planned',
+          collapsed: true,
           autogenerate: { directory: 'planned' },
         },
       ],
