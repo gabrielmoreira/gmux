@@ -29,7 +29,7 @@ func socketDir() string {
 	if d := os.Getenv("GMUX_SOCKET_DIR"); d != "" {
 		return d
 	}
-	return "/tmp/gmux-sessions"
+	return filepath.Join(os.TempDir(), "gmux-sessions")
 }
 
 // OnDeadFunc is invoked after a session has just landed as Alive=false

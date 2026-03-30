@@ -12,15 +12,12 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
-	"github.com/creack/pty"
 	"github.com/gmuxapp/gmux/cli/gmux/internal/session"
 	"github.com/gmuxapp/gmux/packages/adapter"
 	"github.com/gmuxapp/gmux/packages/adapter/adapters"
@@ -63,9 +60,7 @@ func BindSocket(sockPath string) (net.Listener, error) {
 		return nil, fmt.Errorf("BindSocket: mkdir %s: %w", filepath.Dir(sockPath), err)
 	}
 	_ = os.Remove(sockPath)
-	oldUmask := syscall.Umask(0o077)
-	defer syscall.Umask(oldUmask)
-	return net.Listen("unix", sockPath)
+	return listenUnix(sockPath)
 }
 
 // probeSocket returns true if a Unix socket at sockPath accepts
@@ -149,10 +144,19 @@ type ResizeMsg struct {
 	Source string `json:"source,omitempty"`
 }
 
+type PtyProcess interface {
+	Pid() int
+	Wait() error
+	ExitCode(err error) int
+	Kill() error
+	KillProcessGroup() error
+	SignalWinch()
+}
+
 // Server holds a PTY and serves WebSocket connections.
 type Server struct {
-	cmd      *exec.Cmd
-	ptmx     *os.File
+	cmd      PtyProcess
+	ptmx     io.ReadWriteCloser
 	sockPath string
 	listener net.Listener
 	screen       *vt.Emulator // virtual terminal for replay snapshots (guarded by mu)
@@ -240,15 +244,23 @@ func New(cfg Config) (*Server, error) {
 	}
 	listener := cfg.Listener
 
-	cmd := exec.Command(cfg.Command[0], cfg.Command[1:]...)
-	cmd.Dir = cfg.Cwd
-	cmd.Env = buildChildEnv(os.Environ(), cfg.Env, cfg.Version)
+	if cfg.State == nil {
+		kind := "shell"
+		if cfg.Adapter != nil && cfg.Adapter.Name() != "" {
+			kind = cfg.Adapter.Name()
+		}
+		cfg.State = session.New(session.Config{
+			Command:    cfg.Command,
+			Cwd:        cfg.Cwd,
+			Kind:       kind,
+			SocketPath: cfg.SocketPath,
+		})
+	}
 
-	// Start command in a new PTY
-	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
-		Cols: cfg.Cols,
-		Rows: cfg.Rows,
-	})
+	env := buildChildEnv(os.Environ(), cfg.Env, cfg.Version)
+
+	// Start command in a new PTY.
+	ptmx, cmd, err := startPTY(cfg.Command[0], cfg.Command, env, cfg.Cwd, cfg.Cols, cfg.Rows)
 	if err != nil {
 		listener.Close()
 		os.Remove(cfg.SocketPath)
@@ -326,10 +338,10 @@ func (s *Server) processScreen() {
 
 // Pid returns the child process PID.
 func (s *Server) Pid() int {
-	if s.cmd.Process == nil {
+	if s.cmd == nil {
 		return 0
 	}
-	return s.cmd.Process.Pid
+	return s.cmd.Pid()
 }
 
 // SocketPath returns the Unix socket path.
@@ -356,13 +368,10 @@ func (s *Server) PTYDone() <-chan struct{} {
 
 // ExitCode returns the child process exit code (only valid after Done).
 func (s *Server) ExitCode() int {
-	if s.err == nil {
-		return 0
+	if s.cmd == nil {
+		return 1
 	}
-	if exitErr, ok := s.err.(*exec.ExitError); ok {
-		return exitErr.ExitCode()
-	}
-	return 1
+	return s.cmd.ExitCode(s.err)
 }
 
 // SetLocalOutput sets a writer that receives a copy of all PTY output.
@@ -612,29 +621,26 @@ func (s *Server) handlePutSlug(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleKill(w http.ResponseWriter, r *http.Request) {
-	if s.cmd.Process == nil {
+	if s.cmd == nil || s.cmd.Pid() == 0 {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	// SIGHUP matches the "terminal closed" semantics of this endpoint:
-	// interactive shells (bash, zsh) ignore SIGTERM but exit cleanly on
-	// SIGHUP; TUI adapters treat SIGHUP the same as a graceful shutdown.
-	// Sent to the process group so children (e.g. a subshell's commands)
-	// receive it too.
-	pid := s.cmd.Process.Pid
-	syscall.Kill(-pid, syscall.SIGHUP)
-	log.Printf("ptyserver: sent SIGHUP to child pid %d", pid)
+
+	// Gracefully terminate the process group / session owner.
+	pid := s.cmd.Pid()
+	if err := s.cmd.KillProcessGroup(); err != nil {
+		log.Printf("ptyserver: graceful kill failed for child pid %d: %v", pid, err)
+	}
+	log.Printf("ptyserver: sent graceful termination to child pid %d", pid)
 
 	// Block until the child actually exits (or escalate). Dismiss/restart
 	// callers rely on this: once /kill returns, gmuxd immediately removes
 	// the session and expects the runner's socket path to be free.
-	// Returning early while a shell (e.g. fish) ignores SIGHUP causes
-	// the next discovery scan to re-register the dead session.
 	select {
 	case <-s.done:
 	case <-time.After(2 * time.Second):
-		syscall.Kill(-pid, syscall.SIGKILL)
-		log.Printf("ptyserver: escalated to SIGKILL for child pid %d", pid)
+		_ = s.cmd.Kill()
+		log.Printf("ptyserver: escalated to hard kill for child pid %d", pid)
 		<-s.done
 	}
 
@@ -646,11 +652,6 @@ func (s *Server) handleKill(w http.ResponseWriter, r *http.Request) {
 	// to new dialers, so a daemon launching a replacement runner under
 	// the same id (resume / restart, see ADR 0003) can BindSocket
 	// without racing against this runner's shutdown sequence.
-	//
-	// Idempotent: a later os.Remove on the missing path is harmless;
-	// any normal-exit code path that also tries to clean up the path
-	// (Server.Shutdown's signal-handler call, or the kernel on
-	// process exit) finds it already gone.
 	if err := os.Remove(s.sockPath); err != nil && !os.IsNotExist(err) {
 		log.Printf("ptyserver: kill: remove sockfile %s: %v", s.sockPath, err)
 	}
@@ -832,11 +833,12 @@ func (s *Server) shrinkForReconnect() {
 	s.screen.Resize(int(cols), int(rows))
 	s.mu.Unlock()
 
-	pty.Setsize(s.ptmx, &pty.Winsize{Cols: cols, Rows: rows})
-	if s.cmd.Process != nil {
-		syscall.Kill(-s.cmd.Process.Pid, syscall.SIGWINCH)
+	_ = resizePTY(s.ptmx, cols, rows, 0, 0)
+	if s.cmd != nil {
+		s.cmd.SignalWinch()
 	}
 }
+
 
 func (s *Server) resize(msg ResizeMsg) {
 	if msg.Cols == 0 || msg.Rows == 0 {
@@ -860,16 +862,11 @@ func (s *Server) resize(msg ResizeMsg) {
 	s.mu.Unlock()
 
 	if sizeChanged {
-		pty.Setsize(s.ptmx, &pty.Winsize{
-			Cols: msg.Cols,
-			Rows: msg.Rows,
-			X:    msg.PixelWidth,
-			Y:    msg.PixelHeight,
-		})
+		_ = resizePTY(s.ptmx, msg.Cols, msg.Rows, msg.PixelWidth, msg.PixelHeight)
 
 		// Send SIGWINCH to the child process group.
-		if s.cmd.Process != nil {
-			syscall.Kill(-s.cmd.Process.Pid, syscall.SIGWINCH)
+		if s.cmd != nil {
+			s.cmd.SignalWinch()
 		}
 	}
 

@@ -4,6 +4,7 @@ package paths
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -12,8 +13,17 @@ func SocketPath() string {
 	return filepath.Join(StateDir(), "gmuxd.sock")
 }
 
-// StateDir returns the gmux state directory (~/.local/state/gmux).
+// StateDir returns the gmux state directory (~/.local/state/gmux on Unix,
+// %LOCALAPPDATA%\gmux on Windows).
 func StateDir() string {
+	if runtime.GOOS == "windows" {
+		if dir := os.Getenv("LOCALAPPDATA"); dir != "" {
+			return filepath.Join(dir, "gmux")
+		}
+		if dir, err := os.UserConfigDir(); err == nil && dir != "" {
+			return filepath.Join(dir, "gmux")
+		}
+	}
 	if dir := os.Getenv("XDG_STATE_HOME"); dir != "" {
 		return filepath.Join(dir, "gmux")
 	}

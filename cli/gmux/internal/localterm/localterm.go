@@ -7,9 +7,8 @@ import (
 	"bytes"
 	"io"
 	"os"
-	"os/signal"
+	"runtime"
 	"sync"
-	"syscall"
 
 	"golang.org/x/term"
 )
@@ -21,13 +20,16 @@ type Attach struct {
 	stdin  *os.File
 	stdout *os.File
 
-	ptyWriter io.Writer   // where stdin bytes go (ptmx)
-	resizeFn  func(uint16, uint16) // called on SIGWINCH
-
-	oldState *term.State
-	mu       sync.Mutex
-	detached bool
-	done     chan struct{}
+	ptyWriter     io.Writer
+	resizeFn      func(cols, rows uint16)
+	oldState      *term.State
+	stdinMode     uint32
+	hasStdinMode  bool
+	stdoutMode    uint32
+	hasStdoutMode bool
+	mu            sync.Mutex
+	detached      bool
+	done          chan struct{}
 }
 
 // IsInteractive returns true if stdin is a terminal.
@@ -36,15 +38,18 @@ func IsInteractive() bool {
 }
 
 // TerminalSize returns the current terminal dimensions.
-// It tries stdin, stdout, and stderr in order, since background
-// processes may have stdin redirected to /dev/null.
+// Windows needs a stdout fallback because detached consoles may leave stdin
+// non-terminal; Unix stays stdin-first so sizing follows the controlling TTY.
 func TerminalSize() (cols, rows uint16, err error) {
-	for _, f := range []*os.File{os.Stdin, os.Stdout, os.Stderr} {
-		w, h, e := term.GetSize(int(f.Fd()))
-		if e == nil {
+	files := []*os.File{os.Stdin, os.Stdout}
+	if runtime.GOOS == "windows" {
+		files = []*os.File{os.Stdout, os.Stdin}
+	}
+	for _, f := range files {
+		w, h, err := term.GetSize(int(f.Fd()))
+		if err == nil {
 			return uint16(w), uint16(h), nil
 		}
-		err = e
 	}
 	return 0, 0, err
 }
@@ -70,19 +75,32 @@ func New(cfg Config) (*Attach, error) {
 	stdin := os.Stdin
 	stdout := os.Stdout
 
+	stdoutMode, stdoutErr := enableVT(stdout)
+	stdinMode, stdinErr := enableVTInput(stdin)
+
 	// Enter raw mode — keystrokes pass through to child
 	oldState, err := term.MakeRaw(int(stdin.Fd()))
 	if err != nil {
+		if stdinErr == nil {
+			restoreVTInput(stdin, stdinMode)
+		}
+		if stdoutErr == nil {
+			restoreVT(stdout, stdoutMode)
+		}
 		return nil, err
 	}
 
 	a := &Attach{
-		stdin:     stdin,
-		stdout:    stdout,
-		ptyWriter: cfg.PTYWriter,
-		resizeFn:  cfg.ResizeFn,
-		oldState:  oldState,
-		done:      make(chan struct{}),
+		stdin:         stdin,
+		stdout:        stdout,
+		ptyWriter:     cfg.PTYWriter,
+		resizeFn:      cfg.ResizeFn,
+		oldState:      oldState,
+		stdinMode:     stdinMode,
+		hasStdinMode:  stdinErr == nil,
+		stdoutMode:    stdoutMode,
+		hasStdoutMode: stdoutErr == nil,
+		done:          make(chan struct{}),
 	}
 
 	// Enable focus reporting so we can resize the PTY when the host
@@ -124,10 +142,20 @@ func (a *Attach) Detach() {
 	a.detached = true
 	a.mu.Unlock()
 
-	// Disable focus reporting before restoring terminal state.
-	a.stdout.WriteString("\x1b[?1004l")
+	// Soft reset the host terminal before restoring modes.
+	// This clears Alternate Screen, Bracketed Paste, SGR Mouse Reporting,
+	// and focus reporting which orphaned TUI processes may have left active.
+	if term.IsTerminal(int(a.stdout.Fd())) {
+		a.stdout.Write([]byte("\x1b[?1004l\x1b[?1049l\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l\x1b[?2004l\x1b[?25h\x1b[m"))
+	}
 	if a.oldState != nil {
 		term.Restore(int(a.stdin.Fd()), a.oldState)
+	}
+	if a.hasStdinMode {
+		restoreVTInput(a.stdin, a.stdinMode)
+	}
+	if a.hasStdoutMode {
+		restoreVT(a.stdout, a.stdoutMode)
 	}
 	close(a.done)
 }
@@ -151,11 +179,7 @@ var focusIn = []byte("\x1b[I")
 
 // termSize returns the current dimensions of the attached terminal.
 func (a *Attach) termSize() (cols, rows uint16, err error) {
-	w, h, err := term.GetSize(int(a.stdin.Fd()))
-	if err != nil {
-		return 0, 0, err
-	}
-	return uint16(w), uint16(h), nil
+	return TerminalSize()
 }
 
 // readStdin reads from the calling terminal and writes to the PTY.
@@ -185,24 +209,6 @@ func (a *Attach) readStdin() {
 			// stdin closed (terminal gone) — detach gracefully
 			a.Detach()
 			return
-		}
-	}
-}
-
-// handleWinch listens for SIGWINCH and forwards terminal size to the PTY.
-func (a *Attach) handleWinch() {
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGWINCH)
-	defer signal.Stop(ch)
-
-	for {
-		select {
-		case <-a.done:
-			return
-		case <-ch:
-			if cols, rows, err := a.termSize(); err == nil {
-				a.resizeFn(cols, rows)
-			}
 		}
 	}
 }

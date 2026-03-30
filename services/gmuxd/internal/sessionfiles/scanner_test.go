@@ -45,3 +45,51 @@ func TestPurgeStaleSessions(t *testing.T) {
 		t.Error("resumable session should still be present")
 	}
 }
+
+func TestScanHandlesShortSessionIDs(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("PI_CODING_AGENT_DIR", filepath.Join(tmpHome, ".pi", "agent"))
+
+	writePiSession(t, tmpHome, "/tmp/project-short", "abc", "hello")
+
+	s := newTestStore()
+	sc := New(s)
+	sc.Scan()
+
+	var found *store.Session
+	for _, sess := range s.List() {
+		if sess.ResumeKey == "abc" {
+			copy := sess
+			found = &copy
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected session with resume key abc to be discovered")
+	}
+	if found.ID != "file-abc" {
+		t.Fatalf("expected short session id to remain intact, got %q", found.ID)
+	}
+	if found.ResumeKey != "abc" {
+		t.Fatalf("expected resume key abc, got %q", found.ResumeKey)
+	}
+}
+
+func TestScanSkipsEmptySessionIDs(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("PI_CODING_AGENT_DIR", filepath.Join(tmpHome, ".pi", "agent"))
+
+	writePiSession(t, tmpHome, "/tmp/project-empty", "", "hello")
+
+	s := newTestStore()
+	sc := New(s)
+	sc.Scan()
+
+	for _, sess := range s.List() {
+		if sess.ID == "file-" || sess.ResumeKey == "" {
+			t.Fatalf("expected empty session ids to be skipped, found %#v", sess)
+		}
+	}
+}
