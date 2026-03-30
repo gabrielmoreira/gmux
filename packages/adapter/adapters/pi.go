@@ -91,7 +91,7 @@ func (p *Omp) Match(cmd []string) bool {
 }
 
 // Env returns no extra environment variables.
-func (p *Pi) Env(_ adapter.EnvContext) []string { return nil }
+func (p *Pi) Env(_ adapter.EnvContext) []string  { return nil }
 func (p *Omp) Env(_ adapter.EnvContext) []string { return nil }
 
 func (p *Pi) Launchers() []adapter.Launcher {
@@ -387,7 +387,7 @@ func (p *Pi) ParseNewLines(lines []string, filePath string) []adapter.Event {
 							})
 						}
 					}
-				// Unknown stopReasons: no state change.
+					// Unknown stopReasons: no state change.
 				}
 			}
 		}
@@ -667,7 +667,6 @@ func truncateTitle(s string, maxLen int) string {
 	}
 	return s[:cut] + "…"
 }
-
 
 var (
 	errEmpty      = &parseError{"empty file"}

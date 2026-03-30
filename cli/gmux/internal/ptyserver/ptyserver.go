@@ -18,11 +18,11 @@ import (
 	"sync"
 	"time"
 
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/vt"
 	"github.com/gmuxapp/gmux/cli/gmux/internal/session"
 	"github.com/gmuxapp/gmux/packages/adapter"
 	"github.com/gmuxapp/gmux/packages/adapter/adapters"
-	uv "github.com/charmbracelet/ultraviolet"
-	"github.com/charmbracelet/x/vt"
 	"nhooyr.io/websocket"
 )
 
@@ -159,19 +159,19 @@ type Server struct {
 	ptmx     io.ReadWriteCloser
 	sockPath string
 	listener net.Listener
-	screen       *vt.Emulator // virtual terminal for replay snapshots (guarded by mu)
-	adapter      adapter.Adapter
-	state        *session.State
+	screen   *vt.Emulator // virtual terminal for replay snapshots (guarded by mu)
+	adapter  adapter.Adapter
+	state    *session.State
 
 	mu             sync.Mutex
 	clients        map[*wsClient]struct{}
-	localOut       io.Writer       // optional local terminal output sink
-	scrollback     io.WriteCloser  // optional persistent scrollback sink (closed in waitChild)
-	ptyCols        uint16          // last applied PTY cols (guarded by mu)
-	ptyRows        uint16          // last applied PTY rows (guarded by mu)
-	cursorHidden   bool            // tracks DECTCEM via callback (guarded by mu)
-	screenPending  []byte          // raw PTY data not yet fed to screen (guarded by mu)
-	lastClientLeft time.Time       // when the last WS client disconnected (guarded by mu)
+	localOut       io.Writer      // optional local terminal output sink
+	scrollback     io.WriteCloser // optional persistent scrollback sink (closed in waitChild)
+	ptyCols        uint16         // last applied PTY cols (guarded by mu)
+	ptyRows        uint16         // last applied PTY rows (guarded by mu)
+	cursorHidden   bool           // tracks DECTCEM via callback (guarded by mu)
+	screenPending  []byte         // raw PTY data not yet fed to screen (guarded by mu)
+	lastClientLeft time.Time      // when the last WS client disconnected (guarded by mu)
 
 	done    chan struct{} // closed when child exits
 	ptyDone chan struct{} // closed when readPTY finishes draining
@@ -839,7 +839,6 @@ func (s *Server) shrinkForReconnect() {
 	}
 }
 
-
 func (s *Server) resize(msg ResizeMsg) {
 	if msg.Cols == 0 || msg.Rows == 0 {
 		return
@@ -1040,7 +1039,6 @@ func (s *Server) readPTY() {
 		}
 	}
 }
-
 
 func (s *Server) waitChild() {
 	s.err = s.cmd.Wait()
