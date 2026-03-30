@@ -520,7 +520,7 @@ func serve(stderr io.Writer) int {
 	go fileMon.Run(stopFileMon)
 	defer close(stopFileMon)
 
-	// Start socket-based discovery (scans /tmp/gmux-sessions/*.sock)
+	// Start socket-based discovery (scans the shared session socket directory).
 	// Discovery also subscribes to each runner's /events SSE for live updates.
 	stopDiscovery := make(chan struct{})
 	go discovery.Watch(sessions, subs, fileMon, persistDead, fileMon.ApplyPersistedAttributions, 3*time.Second, stopDiscovery)

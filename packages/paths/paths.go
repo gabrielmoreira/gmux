@@ -13,6 +13,22 @@ func SocketPath() string {
 	return filepath.Join(StateDir(), "gmuxd.sock")
 }
 
+// SessionSocketDir returns the directory containing live gmux session sockets.
+func SessionSocketDir() string {
+	if dir := os.Getenv("GMUX_SOCKET_DIR"); dir != "" {
+		return dir
+	}
+	if runtime.GOOS == "windows" {
+		return filepath.Join(os.TempDir(), "gmux-sessions")
+	}
+	return filepath.Join("/tmp", "gmux-sessions")
+}
+
+// SessionSocketPath returns the path to a live gmux session socket.
+func SessionSocketPath(sessionID string) string {
+	return filepath.Join(SessionSocketDir(), sessionID+".sock")
+}
+
 // StateDir returns the gmux state directory (~/.local/state/gmux on Unix,
 // %LOCALAPPDATA%\gmux on Windows).
 func StateDir() string {

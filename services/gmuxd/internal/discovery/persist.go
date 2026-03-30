@@ -5,12 +5,14 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+
+	"github.com/gmuxapp/gmux/packages/paths"
 )
 
 // attributionFilePath returns the path for persisted attributions,
-// colocated with the session sockets in the gmux-sessions directory.
+// colocated with the shared session socket directory.
 func attributionFilePath() string {
-	return filepath.Join(socketDir(), "attributions.json")
+	return filepath.Join(paths.SessionSocketDir(), "attributions.json")
 }
 
 // persistedAttribution is the on-disk format for a single file attribution.

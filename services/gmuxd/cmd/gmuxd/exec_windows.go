@@ -4,6 +4,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"syscall"
 )
 
@@ -13,16 +14,25 @@ func sysProcAttr() *syscall.SysProcAttr {
 	}
 }
 
-// defaultShell returns the user's preferred shell, defaulting to /bin/sh.
+// defaultShell returns the first executable shell candidate for Windows,
+// preferring SHELL when it points to a runnable program.
 func defaultShell() string {
-	shell := os.Getenv("SHELL") // If running in mintty or something similar
-	if shell != "" {
+	if shell := executableShell(os.Getenv("SHELL")); shell != "" {
 		return shell
 	}
-	// Fallbacks for Windows native env
-	comspec := os.Getenv("COMSPEC")
-	if comspec != "" {
+	if comspec := executableShell(os.Getenv("COMSPEC")); comspec != "" {
 		return comspec
 	}
 	return "cmd.exe"
+}
+
+func executableShell(candidate string) string {
+	if candidate == "" {
+		return ""
+	}
+	path, err := exec.LookPath(candidate)
+	if err != nil {
+		return ""
+	}
+	return path
 }

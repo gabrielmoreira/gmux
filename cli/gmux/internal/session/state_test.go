@@ -2,9 +2,11 @@ package session
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"testing"
 
 	"github.com/gmuxapp/gmux/packages/adapter"
+	"github.com/gmuxapp/gmux/packages/paths"
 )
 
 func TestNewState(t *testing.T) {
@@ -13,7 +15,7 @@ func TestNewState(t *testing.T) {
 		Command:    []string{"echo", "hello"},
 		Cwd:        "/tmp",
 		Kind:       "generic",
-		SocketPath: "/tmp/gmux-sessions/sess-test.sock",
+		SocketPath: filepath.Join(paths.SessionSocketDir(), "sess-test.sock"),
 	})
 
 	if s.ID != "sess-test" {

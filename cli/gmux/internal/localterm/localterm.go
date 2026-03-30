@@ -46,7 +46,8 @@ func TerminalSize() (cols, rows uint16, err error) {
 		files = []*os.File{os.Stdout, os.Stdin}
 	}
 	for _, f := range files {
-		w, h, err := term.GetSize(int(f.Fd()))
+		var w, h int
+		w, h, err = term.GetSize(int(f.Fd()))
 		if err == nil {
 			return uint16(w), uint16(h), nil
 		}

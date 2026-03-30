@@ -148,6 +148,36 @@ func TestReadStdinNoFocusNoResize(t *testing.T) {
 	}
 }
 
+func TestTerminalSizeReturnsErrorWhenNoTerminalIsAvailable(t *testing.T) {
+	oldStdin := os.Stdin
+	oldStdout := os.Stdout
+
+	dir := t.TempDir()
+	stdinFile, err := os.Create(filepath.Join(dir, "stdin"))
+	if err != nil {
+		t.Fatalf("create stdin file: %v", err)
+	}
+	stdoutFile, err := os.Create(filepath.Join(dir, "stdout"))
+	if err != nil {
+		stdinFile.Close()
+		t.Fatalf("create stdout file: %v", err)
+	}
+
+	os.Stdin = stdinFile
+	os.Stdout = stdoutFile
+	t.Cleanup(func() {
+		os.Stdin = oldStdin
+		os.Stdout = oldStdout
+		stdoutFile.Close()
+		stdinFile.Close()
+	})
+
+	cols, rows, err := TerminalSize()
+	if err == nil {
+		t.Fatalf("TerminalSize() = (%d, %d, nil), want error", cols, rows)
+	}
+}
+
 // safeBuffer is a bytes.Buffer safe for concurrent Write and String.
 type safeBuffer struct {
 	mu  sync.Mutex

@@ -23,7 +23,7 @@ Track the main implementation differences between Windows and Unix so the Window
 | Local terminal sizing | Prefer `stdout`, fallback `stdin` | Prefer `stdin`, fallback `stdout` | Detached Windows consoles can make stdin unreliable; Unix controlling TTY is typically stdin | Kept platform-specific to avoid Unix regressions |
 | Daemon state dir | `%LOCALAPPDATA%\gmux` | `$XDG_STATE_HOME/gmux` or `~/.local/state/gmux` | Windows runtime-data conventions differ | Documented in config docs |
 | Config / theme / keybind paths | `%USERPROFILE%\.config\gmux\...` | `$XDG_CONFIG_HOME/gmux/...` or `~/.config/gmux/...` | Current repo still uses XDG-style config semantics on Unix and a matching Windows fallback path | User-facing docs updated |
-| Session sockets | `%TEMP%\gmux-sessions` | `/tmp/gmux-sessions` | Temp directory conventions differ | Still uses AF_UNIX on both |
+| Session sockets | the Windows temp directory (typically `%TEMP%\gmux-sessions`) | `/tmp/gmux-sessions` | Windows temp directory conventions differ; Unix keeps a stable shared default | Shared `paths.SessionSocketDir()` keeps both binaries on the same rules; set `GMUX_SOCKET_DIR` if Windows temp environments differ |
 | Browser launch fallback | `rundll32 url.dll,FileProtocolHandler` | normal Unix browser opener path | Windows browser opening differs | Windows fallback added |
 | PI / OMP session discovery | Windows-encoded path names under `%USERPROFILE%\.pi` / `%USERPROFILE%\.omp` | Unix-encoded path names under `~/.pi` / `~/.omp` | Session directory naming differs by tool and path shape | Encoding logic is tested on both shapes |
 
