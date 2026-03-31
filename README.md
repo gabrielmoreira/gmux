@@ -35,7 +35,7 @@ Open `localhost:8790` — all three sessions are there, grouped by project, with
 
 The daemon (`gmuxd`) starts automatically on first use. There's nothing else to set up. For daemon commands, run `gmuxd -h`.
 
-Windows support is initial. The primary tested path is Windows Terminal with PowerShell 7 or Windows PowerShell. Git Bash and WSL launchers are available, but they depend on the launched shell's own PTY behavior.
+Windows support is initial. The primary tested path is Windows Terminal with PowerShell 7 or Windows PowerShell. Optional launchers such as Git Bash, WSL, Codex, Copilot, and Gemini only appear when their commands are installed, and their behavior still depends on the launched shell/tool.
 
 ## How it works
 

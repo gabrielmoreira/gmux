@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -66,7 +67,7 @@ func (p *Omp) Discover() bool {
 // `pi-coding-agent` binary.
 func (p *Pi) Match(cmd []string) bool {
 	for _, arg := range cmd {
-		base := filepath.Base(arg)
+		base := normalizedExecutableName(arg)
 		if base == "pi" || base == "pi-coding-agent" {
 			return true
 		}
@@ -79,7 +80,7 @@ func (p *Pi) Match(cmd []string) bool {
 
 func (p *Omp) Match(cmd []string) bool {
 	for _, arg := range cmd {
-		base := filepath.Base(arg)
+		base := normalizedExecutableName(arg)
 		if base == "omp" {
 			return true
 		}
@@ -88,6 +89,15 @@ func (p *Omp) Match(cmd []string) bool {
 		}
 	}
 	return false
+}
+
+func normalizedExecutableName(arg string) string {
+	base := filepath.Base(arg)
+	base = strings.TrimSuffix(base, filepath.Ext(base))
+	if runtime.GOOS == "windows" {
+		return strings.ToLower(base)
+	}
+	return base
 }
 
 // Env returns no extra environment variables.
@@ -144,14 +154,14 @@ func (p *Pi) SessionRootDir() string {
 }
 
 func (p *Omp) SessionRootDir() string {
-	if dir := os.Getenv("PI_CODING_AGENT_DIR"); dir != "" {
-		return filepath.Join(dir, "sessions")
-	}
-	if dir := os.Getenv("OMP_AGENT_DIR"); dir != "" {
-		return filepath.Join(dir, "sessions")
-	}
-	if dir := os.Getenv("OMP_DIR"); dir != "" {
-		return filepath.Join(dir, "sessions")
+	for _, dir := range []string{
+		os.Getenv("OMP_AGENT_DIR"),
+		os.Getenv("OMP_DIR"),
+		os.Getenv("PI_CODING_AGENT_DIR"),
+	} {
+		if dir != "" {
+			return filepath.Join(dir, "sessions")
+		}
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {

@@ -18,6 +18,7 @@ import (
 type discoverTestAdapter struct {
 	name      string
 	available bool
+	launchers []adapter.Launcher
 }
 
 func (a discoverTestAdapter) Name() string                      { return a.name }
@@ -26,6 +27,9 @@ func (a discoverTestAdapter) Match(_ []string) bool             { return false }
 func (a discoverTestAdapter) Env(_ adapter.EnvContext) []string { return nil }
 func (a discoverTestAdapter) Monitor(_ []byte) *adapter.Event { return nil }
 func (a discoverTestAdapter) Launchers() []adapter.Launcher {
+	if a.launchers != nil {
+		return a.launchers
+	}
 	return []adapter.Launcher{{ID: a.name, Label: a.name}}
 }
 
@@ -73,6 +77,32 @@ func TestLaunchersForAdaptersFiltersUnavailable(t *testing.T) {
 	}
 	if launchers[0].ID != "pi" || launchers[1].ID != "shell" {
 		t.Fatalf("unexpected launcher order: %#v", launchers)
+	}
+}
+
+func TestLaunchersForAdaptersFiltersUnavailableCommands(t *testing.T) {
+	adapterList := []adapter.Adapter{
+		discoverTestAdapter{name: "shell", available: true, launchers: []adapter.Launcher{
+			{ID: "shell", Label: "shell"},
+			{ID: "go", Label: "go", Command: []string{"go"}},
+			{ID: "missing", Label: "missing", Command: []string{"gmux-missing-launcher-command-12345"}},
+		}},
+	}
+
+	launchers := launchersForAdapters(adapterList, map[string]bool{"shell": true})
+	if len(launchers) != 2 {
+		t.Fatalf("expected 2 available launchers, got %#v", launchers)
+	}
+	if launchers[0].ID != "shell" || launchers[1].ID != "go" {
+		t.Fatalf("unexpected launcher order: %#v", launchers)
+	}
+	for _, l := range launchers {
+		if !l.Available {
+			t.Fatalf("expected launcher to be available: %#v", l)
+		}
+		if l.ID == "missing" {
+			t.Fatalf("did not expect missing launcher in config: %#v", l)
+		}
 	}
 }
 

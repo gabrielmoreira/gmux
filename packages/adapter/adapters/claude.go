@@ -15,11 +15,11 @@ import (
 
 // Compile-time interface checks.
 var (
-	_ adapter.Launchable      = (*Claude)(nil)
-	_ adapter.SessionFiler    = (*Claude)(nil)
-	_ adapter.FileMonitor     = (*Claude)(nil)
-	_ adapter.FileAttributor  = (*Claude)(nil)
-	_ adapter.Resumer         = (*Claude)(nil)
+	_ adapter.Launchable     = (*Claude)(nil)
+	_ adapter.SessionFiler   = (*Claude)(nil)
+	_ adapter.FileMonitor    = (*Claude)(nil)
+	_ adapter.FileAttributor = (*Claude)(nil)
+	_ adapter.Resumer        = (*Claude)(nil)
 )
 
 func init() {
@@ -43,7 +43,7 @@ func (c *Claude) Discover() bool {
 // Match returns true if any argument before "--" is the `claude` binary.
 func (c *Claude) Match(cmd []string) bool {
 	for _, arg := range cmd {
-		if filepath.Base(arg) == "claude" {
+		if normalizedExecutableName(arg) == "claude" {
 			return true
 		}
 		if arg == "--" {
@@ -314,7 +314,7 @@ func (c *Claude) ParseNewLines(lines []string, _ string) []adapter.Event {
 					Status: &adapter.Status{},
 					Unread: adapter.BoolPtr(true),
 				})
-			// thinking-only = intermediate, no event.
+				// thinking-only = intermediate, no event.
 			}
 		}
 	}

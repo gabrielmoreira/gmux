@@ -3,6 +3,7 @@ package adapters
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/gmuxapp/gmux/packages/adapter"
@@ -30,6 +31,19 @@ func TestClaudeMatchFullPath(t *testing.T) {
 	}
 	if !c.Match([]string{"/home/user/.local/bin/claude"}) {
 		t.Fatal("should match ~/.local/bin path")
+	}
+}
+
+func TestClaudeMatchIgnoresCaseAndExeOnWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-only command matching")
+	}
+
+	if !NewClaude().Match([]string{"CLAUDE.EXE"}) {
+		t.Fatal("should match upper-case claude.exe on Windows")
+	}
+	if !NewClaude().Match([]string{`C:\\Tools\\Claude.exe`}) {
+		t.Fatal("should match mixed-case full path on Windows")
 	}
 }
 

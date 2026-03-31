@@ -3,6 +3,7 @@ package adapters
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -37,6 +38,22 @@ func TestPiMatchWrapped(t *testing.T) {
 	}
 	if !p.Match([]string{"/home/user/.local/bin/pi"}) {
 		t.Fatal("should match full path")
+	}
+}
+
+func TestAgentAdapterMatchIsCaseInsensitiveOnWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-only command matching")
+	}
+
+	if !NewPi().Match([]string{"PI.EXE"}) {
+		t.Fatal("should match upper-case pi.exe on Windows")
+	}
+	if !NewPi().Match([]string{`C:\\Tools\\Pi-Coding-Agent.EXE`}) {
+		t.Fatal("should match mixed-case pi-coding-agent.exe on Windows")
+	}
+	if !NewOmp().Match([]string{"OMP.EXE"}) {
+		t.Fatal("should match upper-case omp.exe on Windows")
 	}
 }
 
@@ -678,6 +695,33 @@ func TestOmpSessionRootDirRespectsEnvVar(t *testing.T) {
 	t.Setenv("OMP_DIR", "")
 	root := NewOmp().SessionRootDir()
 	want := filepath.Join(custom, "sessions")
+	if root != want {
+		t.Errorf("expected %s, got %s", want, root)
+	}
+}
+
+func TestOmpSessionRootDirPrefersOmpEnvOverPiCompatEnv(t *testing.T) {
+	piCompat := t.TempDir()
+	ompSpecific := t.TempDir()
+	t.Setenv("PI_CODING_AGENT_DIR", piCompat)
+	t.Setenv("OMP_AGENT_DIR", ompSpecific)
+	t.Setenv("OMP_DIR", "")
+
+	root := NewOmp().SessionRootDir()
+	want := filepath.Join(ompSpecific, "sessions")
+	if root != want {
+		t.Errorf("expected %s, got %s", want, root)
+	}
+}
+
+func TestOmpSessionRootDirFallsBackToPiCompatEnv(t *testing.T) {
+	compat := t.TempDir()
+	t.Setenv("PI_CODING_AGENT_DIR", compat)
+	t.Setenv("OMP_AGENT_DIR", "")
+	t.Setenv("OMP_DIR", "")
+
+	root := NewOmp().SessionRootDir()
+	want := filepath.Join(compat, "sessions")
 	if root != want {
 		t.Errorf("expected %s, got %s", want, root)
 	}

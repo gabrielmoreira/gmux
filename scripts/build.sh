@@ -31,15 +31,16 @@ fi
 # ── Go binaries ──
 
 VERSION="${VERSION:-dev}"
+GOEXE="$(go env GOEXE)"
 LDFLAGS_COMMON="-s -w -X main.version=$VERSION"
 export CGO_ENABLED=0
 
 echo "→ Building gmuxd…"
-(cd "$ROOT/services/gmuxd" && go build -ldflags "$LDFLAGS_COMMON" -o "$BIN/gmuxd" ./cmd/gmuxd)
+(cd "$ROOT/services/gmuxd" && go build -ldflags "$LDFLAGS_COMMON" -o "$BIN/gmuxd$GOEXE" ./cmd/gmuxd)
 
 echo "→ Building gmux…"
-(cd "$ROOT/cli/gmux" && go build -ldflags "$LDFLAGS_COMMON" -o "$BIN/gmux" ./cmd/gmux)
+(cd "$ROOT/cli/gmux" && go build -ldflags "$LDFLAGS_COMMON" -o "$BIN/gmux$GOEXE" ./cmd/gmux)
 
 echo ""
-ls -lh "$BIN/gmuxd" "$BIN/gmux"
+ls -lh "$BIN/gmuxd$GOEXE" "$BIN/gmux$GOEXE"
 echo "✓ Build complete"

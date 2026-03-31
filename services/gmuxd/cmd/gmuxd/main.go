@@ -55,7 +55,7 @@ type LaunchConfig struct {
 }
 
 // discoverLaunchers derives launchers from the compiled adapter set and keeps
-// only the adapters that are available on this machine.
+// only the launchers whose adapter and command are available on this machine.
 func discoverLaunchers() LaunchConfig {
 	adapterList := append([]adapter.Adapter{}, adapters.All...)
 	adapterList = append(adapterList, adapters.DefaultFallback())
@@ -104,7 +104,7 @@ func launchersForAdapters(adapterList []adapter.Adapter, availableByName map[str
 			if _, ok := seen[l.ID]; ok {
 				continue
 			}
-			if !availableByName[a.Name()] {
+			if !availableByName[a.Name()] || !launcherCommandAvailable(l) {
 				continue
 			}
 			seen[l.ID] = struct{}{}
@@ -114,6 +114,14 @@ func launchersForAdapters(adapterList []adapter.Adapter, availableByName map[str
 	}
 
 	return launchers
+}
+
+func launcherCommandAvailable(l adapter.Launcher) bool {
+	if len(l.Command) == 0 {
+		return true
+	}
+	_, err := exec.LookPath(l.Command[0])
+	return err == nil
 }
 
 // resolveGmux finds the gmux binary.

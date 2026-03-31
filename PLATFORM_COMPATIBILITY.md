@@ -35,7 +35,7 @@ Track the main implementation differences between Windows and Unix so the Window
 - `gmux` can launch and attach interactive sessions without WSL.
 - Browser UI opens and can attach to live sessions.
 - PI / OMP resumable sessions are discovered and resumed on Windows.
-- Windows-specific launchers are exposed for:
+- Windows-specific launchers can be exposed when their commands are installed:
   - Shell
   - PowerShell 7
   - PowerShell 5
@@ -49,7 +49,7 @@ Track the main implementation differences between Windows and Unix so the Window
 ### Known limitations
 
 - Windows support is still **initial**, not feature-identical in every low-level terminal detail.
-- Git Bash and WSL are exposed as launchers, but their behavior depends on the launched shell/tool, not just gmux.
+- Git Bash, WSL, and third-party CLI launchers only appear when their commands are installed, and their behavior still depends on the launched shell/tool, not just gmux.
 - Third-party agent CLIs may still have their own Windows limitations.
 - `SIGWINCH`-style behavior is inherently Unix-specific, so Windows resize coverage is validated through ConPTY behavior rather than signal delivery semantics.
 
