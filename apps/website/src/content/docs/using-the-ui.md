@@ -10,12 +10,12 @@ Open **[localhost:8790](http://localhost:8790)** after launching your first sess
 Every session has a stable URL:
 
 ```
-http://localhost:8790/<folder>/<adapter>/<slug>
+http://localhost:8790/<project>/<adapter>/<slug>
 ```
 
 For example, `/gmux/pi/fix-auth-bug` links directly to a pi session in the gmux project. These URLs are bookmarkable, shareable, and stable across session resume. External tools (notifications, CI, scripts) can link directly to a specific session.
 
-The folder segment comes from the project name (derived from the repo's remote URL, or the directory name). The adapter segment is the session kind (`pi`, `shell`, `claude`). The slug is an adapter-provided identifier for the specific session.
+The project segment is the project slug from your project configuration. The adapter segment is the session kind (`pi`, `shell`, `claude`). The slug is an adapter-provided identifier for the specific session.
 
 ## The sidebar
 

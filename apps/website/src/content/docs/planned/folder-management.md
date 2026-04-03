@@ -1,149 +1,171 @@
 ---
-title: Folder Management
-description: VCS-aware workspace grouping and manual folder curation.
+title: Project Management
+description: User-curated project list with VCS-aware matching and stable URL routing.
 ---
 
 > This feature is not yet implemented.
 
-Today, folders appear in the sidebar automatically when sessions start, and the scanner walks all adapter session directories to discover every resumable session across all projects. This works but creates noise and prevents adapters with per-project storage (like OpenCode's SQLite) from integrating cleanly.
+Today, folders appear in the sidebar automatically when sessions start, and the scanner walks all adapter session directories to discover every resumable session across all projects. This works but creates noise, doesn't sync between clients, and prevents adapters with per-project storage (like OpenCode's SQLite) from integrating cleanly.
 
 This document describes the replacement, delivered in three steps:
-1. VCS-aware workspace grouping (automatic, zero-config)
-2. Manual folder management (ordering, hiding, the manage folders modal)
+1. Server-side project state with user-curated project list
+2. Manage projects UI
 3. URL routing (stable, hierarchical session URLs)
 
-## Step 1: Workspace grouping
+## Design principles
 
-### The problem
+**Projects, not folders.** The primary unit of organization is a project, not a filesystem path. A project is "gmux" or "my-api", not `/home/mg/dev/gmux`. Folders are an implementation detail of where code lives; the project is what the user thinks about.
 
-When you work in jj workspaces or git worktrees, each workspace appears as a separate folder in the sidebar. Three workspaces of the same repo produce three folder entries. The user mentally groups them, but gmux doesn't.
+**Nothing auto-added.** Sessions are never automatically added to the sidebar. Instead, gmuxd discovers active sessions and offers them as potential projects. The user explicitly adds projects they care about. This gives the user full control and avoids the "whack-a-mole hiding" problem.
 
-### The solution
+**Synced between clients.** Project state lives server-side, so phone, laptop, and tailscale remote all see the same sidebar. The state is owned by the gmuxd instance serving the web UI (the "home" instance in a multi-host setup).
 
-Sessions gain a new field: `workspace_root`. The runner detects this at launch by walking up from the session's cwd looking for VCS markers. When multiple visible folders share the same workspace root, the frontend collapses them into a single group.
+## Step 1: Server-side project state
 
-The sidebar displays grouped sessions under the repo name with all sessions flattened:
+### What is a project?
 
-```
-gmux
-  Fix auth bug            ← cwd: ~/dev/gmux
-  Add adapter             ← cwd: ~/dev/gmux/.grove/teak
-  Update docs             ← cwd: ~/dev/gmux
-```
+A project is a user-configured entry that matches sessions to a named group in the sidebar. Each project has:
 
-Instead of today's split view:
+- A **slug** (URL-safe identifier, e.g. `gmux`)
+- A **match rule**: either a remote URL or a list of filesystem paths (never both)
+- A **hidden** flag (for projects the user wants to keep configured but not shown)
 
-```
-gmux
-  Fix auth bug
-  Update docs
-teak
-  Add adapter
-```
+### Match rules
 
-The actual cwd is still visible in the session detail header. The sidebar just doesn't need it for organization.
+A project matches sessions by one of two mechanisms:
 
-Folders that don't share a workspace root with any other folder render as standalone entries, same as today. A single-folder "group" is just a folder.
+**Remote-based:** The project stores a single normalized remote URL (e.g. `github.com/gmuxapp/gmux`). A session matches if any of its remotes equals this URL. This handles forks (origin vs upstream), multiple clones, cross-machine grouping, and worktrees automatically.
 
-### Detection
+**Path-based:** The project stores one or more absolute filesystem paths. A session matches if its cwd or workspace_root is under one of these paths (prefix match). This handles local-only repos, scratch directories, and intentional carve-outs from remote-based projects.
 
-The runner (gmux) detects the workspace root at session startup and includes it in the session metadata served via `/meta`. Detection is filesystem-only (stat calls and file reads, no subprocesses):
+A project uses one or the other, never both. This removes ambiguity and gives the user explicit control over what each project captures.
 
-1. **jj**: walk up from cwd looking for `.jj/` directory. If found, resolve the repo root. For jj workspaces, `.jj/repo` is a path to the shared store; the main workspace's directory is the root. For colocated repos, the `.jj/` and `.git/` directories sit side by side.
-2. **git**: walk up from cwd looking for `.git`. If it's a file (git worktree marker), read it to find the main `.git` directory and derive the main worktree path. If it's a directory, that's the repo root.
-3. If neither is found, `workspace_root` is empty. The folder stands alone.
+### Match precedence
 
-### Data flow
+When a session could match multiple projects, the most specific match wins:
 
-**Runner** (`cli/gmux`):
-- New field on `session.State`: `WorkspaceRoot string`
-- Detected once at startup, before the session is served via `/meta`
-- Included in the JSON response alongside `cwd`
+1. **Path-based projects, longest prefix first.** A project claiming `/home/mg/dev/gmux/.grove/teak` beats one claiming `/home/mg/dev/gmux` for sessions in the teak directory.
+2. **Remote-based projects.** Checked only if no path-based project matched.
+3. **Unmatched sessions** are not shown in the sidebar. They appear in the "discovered" list as candidates for the user to add.
 
-**Store** (`services/gmuxd/internal/store`):
-- New field on `store.Session`: `WorkspaceRoot string`
-- Populated from the runner's `/meta` response during discovery
-- Broadcast to frontends via SSE like any other session field
+Two projects claiming the exact same normalized path is a validation error. Nesting (one path under another) is valid and intentional, with longest prefix winning.
 
-**Frontend** (`apps/gmux-web`):
-- New field on the `Session` type: `workspace_root?: string`
-- `groupByFolder` updated: when two or more folders share a `workspace_root`, collapse them into a single group using the root's basename as the display name
-- Group position in the sidebar is the position of its first member in the current sort order
+### State file
 
-### What this doesn't change
-
-- The sidebar still auto-shows folders when sessions start (current `syncSessions` behavior)
-- The existing folder hide/show mechanism in `sidebar-state.ts` still works
-- The scanner and discovery logic are untouched
-- No new configuration, no new API endpoints, no new state files
-
-This step is additive: a new field plumbed through existing session structures (runner, store, protocol) and a frontend rendering change.
-
-## Step 2: Manual folder management
-
-Depends on Step 1. Adds server-side folder state, a management modal, and scoped session discovery.
-
-### State
-
-The folder list moves from browser localStorage to a server-side file at `~/.local/state/gmux/folders.json`. This ensures consistency across browsers and devices (including tailscale remote access).
+Stored at `~/.local/state/gmux/projects.json`:
 
 ```json
 {
   "items": [
-    { "path": "/home/mg/dev/gmux" },
-    { "path": "/home/mg/dev/gmux/.grove/teak" },
-    { "path": "/home/mg/dev/other-project", "hidden": true }
+    { "slug": "gmux", "remote": "github.com/gmuxapp/gmux" },
+    { "slug": "teak", "paths": ["/home/mg/dev/gmux/.grove/teak"] },
+    { "slug": "scripts", "paths": ["/home/mg/scripts"], "hidden": true }
   ]
 }
 ```
 
-A flat ordered list. Each item has a `path` (always absolute, `~` resolved at write time) and an optional `hidden` flag. That's the entire schema. Grouping is derived at render time from session `workspace_root` fields, not stored as configuration.
+Each item has a `slug`, exactly one of `remote` or `paths`, and an optional `hidden` flag. The array order is the display order.
 
-New installations start with an empty state. The sidebar populates organically as the user launches sessions.
+New installations start with an empty list. The sidebar shows "no projects configured" with a prompt to add one.
 
-### Auto-add
+### Discovery (offered projects)
 
-When a new gmux session starts in a directory:
+gmuxd always knows about active sessions via socket discovery. Sessions that don't match any configured project are grouped using the existing union-find logic (shared remotes, then shared workspace_root, then shared cwd) and presented as "discovered" projects.
 
-1. Resolve the path to absolute form.
-2. Check if the path exists anywhere in state (visible or hidden). If yes, do nothing. Hidden folders stay hidden.
-3. Otherwise, add as a new item at the end of the list, visible.
+The `GET /v1/projects` response includes both:
 
-### Hidden folders
+```json
+{
+  "configured": [
+    { "slug": "gmux", "remote": "github.com/gmuxapp/gmux" }
+  ],
+  "discovered": [
+    {
+      "suggested_slug": "other-project",
+      "remote": "github.com/someone/other-project",
+      "paths": ["/home/mg/dev/other-project"],
+      "session_count": 3
+    }
+  ]
+}
+```
 
-Any folder can be hidden via the manage folders modal. Hidden folders do not appear in the sidebar, even if they have active sessions.
+Discovered entries include both the remote (if available) and paths so the UI can show context. When the user adds one, the match rule is chosen automatically: remote if available, paths otherwise. The user can override this in the manage UI.
 
-Hiding is sticky: a hidden folder stays hidden when new sessions start in it. The user must explicitly unhide it via the modal.
+### Hidden projects
 
-Hidden folders with active sessions are indicated via a badge on the "Manage folders" button at the bottom of the sidebar. This is the only visible hint that hidden activity exists.
+Any project can be hidden. Hidden projects don't appear in the sidebar, but their match rules still apply: sessions matching a hidden project are not shown in the discovered list either. This prevents hidden projects from resurfacing as "new" discoveries.
 
-### Deleted folders
-
-When a configured folder is deleted from disk, it is removed from state entirely (visible and hidden). If the folder is later recreated and a session starts in it, normal auto-add rules apply.
+Hidden projects with active sessions show a badge on the "Manage projects" button.
 
 ### API
 
-**`GET /v1/folders`**: returns the current folder state.
+**`GET /v1/projects`**: returns configured projects and discovered (unmatched) session groups.
 
-**`PUT /v1/folders`**: replaces the entire folder state. The frontend sends the complete ordered list on every mutation (reorder, hide, unhide, remove). Folder lists are small (tens of items), so full replacement avoids conflict resolution complexity. Updates are broadcast to all connected clients via SSE.
+**`PUT /v1/projects`**: replaces the entire project list. The frontend sends the complete ordered list on every mutation (reorder, hide, unhide, remove, rename). Project lists are small, so full replacement avoids conflict resolution. Validates: no duplicate paths after normalization, each item has exactly one of `remote`/`paths`. Broadcasts `projects-update` SSE event to all clients.
 
-**`POST /v1/folders/add`**: adds a single folder. Used by the auto-add mechanism on session start and the path input in the modal. Rejects duplicates (paths are normalized before comparison, so `~/dev/gmux` and `/home/mg/dev/gmux` are the same).
+**`POST /v1/projects/add`**: adds a single project. Used by the "add project" flow. Derives the slug from the remote URL repo name or directory basename. Rejects duplicate match rules. Broadcasts SSE.
 
-### Manage folders modal
+### Scanner scoping
 
-Opens from a "Manage folders" button at the bottom of the sidebar.
+The session file scanner is scoped to configured projects:
+
+**Before**: walk all adapter session root directories, discover every resumable session for every project.
+
+**After**: for each non-hidden project, check each adapter's session directory for that project's paths. Only discover resumable sessions for projects the user has configured.
+
+This scoping makes adapters like OpenCode viable. Instead of requiring a central session directory, the scanner checks `<path>/.opencode/opencode.db` for each configured project path.
+
+## Step 2: Manage projects UI
+
+Opens from a "Manage projects" button at the bottom of the sidebar (or prominently in the empty state).
+
+### Empty state
+
+First-time users see:
 
 ```
 ┌──────────────────────────────────────────────┐
-│  Manage folders                           X  │
 │                                              │
-│  ≡  ~/dev/gmux                          👁‍🗨   │
-│  ≡  ~/dev/gmux/.grove/teak              👁‍🗨   │
-│  ≡  ~/dev/other-project                 👁‍🗨   │
-│  ▸ Show 1 hidden                             │
+│          No projects configured              │
+│                                              │
+│  We found active sessions in:                │
+│                                              │
+│  ┌ gmux ─────────────────────── [Add] ┐     │
+│  │ github.com/gmuxapp/gmux            │     │
+│  │ 3 active sessions                  │     │
+│  └─────────────────────────────────────┘     │
+│                                              │
+│  ┌ scripts ──────────────────── [Add] ┐     │
+│  │ ~/scripts                          │     │
+│  │ 1 active session                   │     │
+│  └─────────────────────────────────────┘     │
 │                                              │
 │  ┌────────────────────────────────────┐      │
-│  │ /path/to/folder                    │      │
+│  │ /path/to/project              [+] │      │
+│  └────────────────────────────────────┘      │
+│                                              │
+└──────────────────────────────────────────────┘
+```
+
+### Manage modal
+
+```
+┌──────────────────────────────────────────────┐
+│  Manage projects                          X  │
+│                                              │
+│  ≡  gmux                                👁   │
+│     github.com/gmuxapp/gmux                  │
+│  ≡  teak                                👁   │
+│     ~/dev/gmux/.grove/teak                   │
+│                                              │
+│  ▸ Show 1 hidden                             │
+│                                              │
+│  ── Discovered ──────────────────────────    │
+│  other-project (2 sessions)        [Add]     │
+│                                              │
+│  ┌────────────────────────────────────┐      │
+│  │ /path/to/project              [+] │      │
 │  └────────────────────────────────────┘      │
 │                                              │
 └──────────────────────────────────────────────┘
@@ -151,55 +173,42 @@ Opens from a "Manage folders" button at the bottom of the sidebar.
 
 **Elements:**
 
-- **Drag handles** (`≡`): reorder items in the flat list.
-- **Eye-slash** (`👁‍🗨`): hide. Moves the item to the hidden section.
-- **Hidden section**: expandable `[Show N hidden]` at the bottom. Hidden items show an eye icon (no slash) to unhide and an `✕` to remove from state permanently. Hidden items are not draggable.
-- **Path input**: always visible at the bottom. Type a path, press Enter to add.
-- **Active session badge**: items with running sessions show a subtle count indicator.
+- **Drag handles** (`≡`): reorder projects in the sidebar.
+- **Visibility toggle** (`👁`): hide/unhide. Hidden projects move to the hidden section.
+- **Hidden section**: expandable, with unhide and remove buttons.
+- **Discovered section**: shows unmatched session groups with an Add button.
+- **Path input**: type or paste a path to add a project manually.
+- **Active session count**: subtle indicator per project.
 
 ### Sidebar rendering
 
-The sidebar is a pure function of the folder state and live session data:
+The sidebar is a pure function of the project state and live session data:
 
 ```
-visibleFolders = state.items.filter(item => !item.hidden)
+visibleProjects = state.items.filter(item => !item.hidden)
 
-// Group by workspace_root (from session data)
-groups = groupByWorkspaceRoot(visibleFolders, sessions)
+for each project in visibleProjects:
+  sessions = allSessions.filter(s => project.matches(s))
+  render project heading (project slug)
+  render all matched sessions, sorted by time
 
-// Render: grouped folders show under repo name,
-// standalone folders show under their own name
-for each group:
-  render heading (repo basename or folder basename)
-  render all sessions from all folders in group, sorted by time
-
-// Footer
-render "Manage folders" button
-  with badge if any hidden folders have active sessions
+footer:
+  render "Manage projects" button
+    with badge if any hidden projects have active sessions
 ```
 
 No transition state, no imperative show/hide logic. The sidebar re-renders when the state or session list changes.
 
-### Scanner changes
-
-The session file scanner is scoped to configured folders:
-
-**Before**: walk all adapter session root directories, discover every resumable session for every project.
-
-**After**: for each non-hidden folder in the state, check each adapter's session directory for that cwd. Only discover resumable sessions for folders the user has configured.
-
-This scoping makes adapters like OpenCode viable. Instead of requiring a central session directory, the scanner checks `<cwd>/.opencode/opencode.db` for each configured folder.
-
 ## Step 3: URL routing
 
-Depends on Step 2. Adds hierarchical, stable URLs for every session.
+Depends on Step 1. Adds hierarchical, stable URLs for every session.
 
 ### URL structure
 
 Each session is addressable at:
 
 ```
-/<folder>/<adapter>/<slug>
+/<project>/<adapter>/<slug>
 ```
 
 Examples:
@@ -207,21 +216,21 @@ Examples:
 ```
 /gmux/pi/fix-auth-bug
 /gmux/shell/pytest-watch
-/other-project/claude/refactor-api
+/scripts/shell/backup-3
 ```
 
 Each segment is meaningful:
 
-- **folder**: the folder slug, derived from the folder identity. For repos with remotes, this is the repo name (e.g. `gmux` from `github.com/gmuxapp/gmux`). For local-only folders, the workspace or directory basename.
-- **adapter**: the session's `kind` (`pi`, `claude`, `shell`, `codex`, etc.). Each adapter gets its own namespace within a folder, so adapters don't need to coordinate slug uniqueness with each other.
+- **project**: the project slug from the project configuration.
+- **adapter**: the session's `kind` (`pi`, `claude`, `shell`, `codex`, etc.). Each adapter gets its own namespace within a project, so adapters don't need to coordinate slug uniqueness with each other.
 - **slug**: an adapter-provided stable identifier for the session. See below.
 
 ### Session slugs
 
 Adapters provide a `slug` field via the existing child protocol (`/meta` response or `GMUX_SOCKET` HTTP). The slug is:
 
-- Derived from something stable in the adapter's domain: pi uses its conversation ID, Claude uses the session file basename, shell uses a sanitized command name or counter.
-- Unique within the adapter's namespace for that folder. If the adapter produces a duplicate, gmux appends a disambiguator (e.g. `-2`).
+- Derived from something stable in the adapter's domain: pi uses its conversation ID or first-message summary, Claude uses the session file basename, shell uses a sanitized command name or counter.
+- Unique within the adapter's namespace for that project. If the adapter produces a duplicate, gmux appends a disambiguator (e.g. `-2`).
 - Falls back to a truncated session ID (e.g. `sess-abc12`) if the adapter doesn't provide one.
 
 The slug is stable across kill and resume. A resumed session keeps the same slug because the adapter's stable identifier (conversation ID, session file) doesn't change. The internal session ID and process may change, but the URL-facing slug stays the same.
@@ -230,29 +239,36 @@ This makes URLs bookmarkable and shareable. A link to `/gmux/pi/fix-auth-bug` re
 
 See [Session Schema](/develop/session-schema) for the `slug` field definition.
 
-### Folder slugs
+### Project slugs
 
-The folder slug is derived from the same identity used for grouping:
+The project slug comes directly from the project configuration. It's set when the project is created (derived from the repo name or directory basename) and user-editable. Renaming a project slug changes its URLs.
 
-1. Repo name from the most common remote URL (e.g. `github.com/gmuxapp/gmux` becomes `gmux`)
-2. Workspace root basename
-3. Directory basename
-
-Folder slugs are stable across clones, worktrees, and machines (when derived from remote URLs). When [peer aggregation](/planned/peer-discovery-aggregation) is added, the host prefix slots in before the folder: `/gmux/pi/fix-auth-bug` becomes `/desktop/gmux/pi/fix-auth-bug`. Existing local URLs continue to work.
+Project slugs must be unique across all configured projects. The `PUT /v1/projects` endpoint validates this.
 
 ### Frontend routing
 
 The frontend uses real URL paths (not hash fragments or query params). The existing `preact-iso` router handles this with path patterns:
 
-- `/:folder/:adapter/:slug` — select a specific session
-- `/:folder` — show folder, select first session
-- `/` — default view
+- `/:project/:adapter/:slug` selects a specific session
+- `/:project` shows the project, selects first session
+- `/` shows the default view
 
-Navigating to a session updates the URL bar. Clicking a session in the sidebar pushes a new URL. The browser's back/forward buttons work as expected. External links (from notifications, CI, scripts) open the correct session directly.
+Navigating to a session updates the URL bar. Clicking a session in the sidebar pushes a new URL. The browser's back/forward buttons work. External links open the correct session directly.
+
+### Forward compatibility with aggregation
+
+When [peer aggregation](/planned/peer-discovery-aggregation) is added, a host prefix slots in before the project:
+
+```
+/gmux/pi/fix-auth-bug          → local session
+/desktop/gmux/pi/fix-auth-bug  → session on the desktop spoke
+```
+
+Existing local URLs continue to work. The project state (which projects to show, ordering, visibility) is owned by the hub gmuxd; spokes just serve sessions.
 
 ### What this enables
 
 - **Deep linking**: notification actions link to the specific session that finished.
 - **Bookmarks**: pin a long-running session in your browser.
 - **External tools**: CI can open `https://gmux.tailnet.ts.net/myproject/shell/build` to show a build session.
-- **Aggregation-ready**: the URL structure extends naturally with a host prefix for cross-machine sessions. No URL scheme changes needed.
+- **Aggregation-ready**: the URL structure extends naturally with a host prefix.

@@ -166,7 +166,7 @@ The `slug` field provides a stable, human-readable identifier for URL routing. I
 - Falls back to a truncated session ID (e.g. `sess-abc12`) if the adapter doesn't provide one.
 - Stable across resume: the slug is tied to the logical session (conversation ID, session file), not the process. A resumed session keeps the same slug.
 
-The slug is part of the hierarchical URL path: `/<folder>/<adapter>/<slug>`. Each adapter gets its own namespace within a folder, so adapters don't need to coordinate with each other. See [Folder Management](/planned/folder-management#step-3-url-routing) for the full URL routing design.
+The slug is part of the hierarchical URL path: `/<project>/<adapter>/<slug>`. Each adapter gets its own namespace within a project, so adapters don't need to coordinate with each other. See [Project Management](/planned/folder-management#step-3-url-routing) for the full URL routing design.
 
 **Setting the slug:**
 

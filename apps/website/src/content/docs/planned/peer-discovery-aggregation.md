@@ -168,20 +168,20 @@ Peer connections are resilient:
 
 ### Sidebar
 
-The sidebar shifts from "folders on this machine" to "projects across all peers." Grouping priority:
+The sidebar shows projects configured by the user (see [Project Management](/planned/folder-management)). Sessions from spokes are matched to projects using the same rules as local sessions: remote-based projects match on the session's remote URLs, path-based projects match on cwd/workspace_root prefix.
 
-1. **By `project_uri`** when available (cross-machine project grouping).
-2. **By `workspace_root`** when sessions share a VCS root on the same peer (the existing workspace grouping from [Folder Management](/planned/folder-management)).
-3. **By `cwd`** as a final fallback.
+For remote-based projects, cross-machine grouping is automatic: a session on the desktop with the same remote URL as a session on the server both appear under the same project.
 
 Each session shows a subtle peer indicator (hostname or icon) so you can tell where it's running. Sessions on the local peer have no indicator.
+
+The project list, ordering, and visibility are owned by the hub gmuxd. Spokes serve sessions but have no knowledge of the hub's project configuration.
 
 ### URL routing
 
 Sessions are addressable via hierarchical URL paths:
 
 ```
-/<host>/<folder>/<adapter>/<slug>
+/<host>/<project>/<adapter>/<slug>
 ```
 
 Examples:
@@ -189,7 +189,6 @@ Examples:
 ```
 /desktop/gmux/pi/fix-auth-bug
 /server/gmux/shell/pytest-watch
-/server/project-a/pi/refactor-api
 ```
 
 For local sessions (no aggregation), the host segment is omitted:
@@ -202,7 +201,7 @@ For local sessions (no aggregation), the host segment is omitted:
 The structure encodes routing (which host), context (which project, which adapter), and identity (the slug). Each segment is meaningful:
 
 - **host**: maps to the spoke namespace. Absent for local sessions. When aggregation is added later, existing local URLs continue to work.
-- **folder**: derived from the folder identity (repo name from remote URL, or workspace basename).
+- **project**: the user-configured project slug (see [Project Management](/planned/folder-management)).
 - **adapter**: the session's `kind` (`pi`, `claude`, `shell`, etc.). Gives each adapter its own namespace, so adapters don't need to coordinate slug uniqueness.
 - **slug**: adapter-provided stable identifier. See [Session Schema](/develop/session-schema) for the `slug` field.
 
@@ -273,7 +272,7 @@ Devcontainers have native dotfiles support. Users configure their dotfiles repo 
 
 ## Incremental delivery
 
-Folder management (server-side folder state, management UI, URL routing) ships first as a prerequisite. It fixes client sync, establishes the folder identity model, and introduces the URL structure that aggregation extends with the host prefix. See [Folder Management](/planned/folder-management).
+Project management (server-side project state, management UI, URL routing) ships first as a prerequisite. It fixes client sync, establishes the project identity model, and introduces the URL structure that aggregation extends with the host prefix. See [Project Management](/planned/folder-management).
 
 ### Step 1: Canonical project URI
 
