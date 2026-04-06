@@ -7,8 +7,15 @@ import {
   parseSessionPath,
   sessionPath,
   resolveSessionFromPath,
+  resolveViewFromPath,
+  viewToPath,
+  viewsEqual,
+  parseSessionHostPath,
+  buildProjectTopology,
+  isSessionVisibleInProject,
   type Session,
   type ProjectItem,
+  type PeerInfo,
 } from './types'
 
 function makeSession(overrides: Partial<Session> & { id: string; cwd: string }): Session {
@@ -533,5 +540,411 @@ describe('normalizeRemote', () => {
   it('handles plain URL', () => {
     expect(normalizeRemote('github.com/org/repo'))
       .toBe('github.com/org/repo')
+  })
+})
+
+// --- View routing ---
+
+describe('resolveViewFromPath', () => {
+  const projects: ProjectItem[] = [
+    { slug: 'gmux', remote: 'github.com/gmuxapp/gmux', paths: ['/dev/gmux'] },
+  ]
+  const sessions = [
+    makeSession({ id: 'sess-1', cwd: '/dev/gmux', kind: 'pi', resume_key: 'fix-auth',
+      remotes: { origin: 'github.com/gmuxapp/gmux' } }),
+  ]
+
+  it('root path resolves to home', () => {
+    expect(resolveViewFromPath('/', projects, sessions)).toEqual({ kind: 'home' })
+  })
+
+  it('empty path resolves to home', () => {
+    expect(resolveViewFromPath('', projects, sessions)).toEqual({ kind: 'home' })
+  })
+
+  it('internal routes resolve to home', () => {
+    expect(resolveViewFromPath('/_/input-diagnostics', projects, sessions)).toEqual({ kind: 'home' })
+  })
+
+  it('project-only path resolves to project view (hub page)', () => {
+    expect(resolveViewFromPath('/gmux', projects, sessions)).toEqual({
+      kind: 'project', projectSlug: 'gmux',
+    })
+  })
+
+  it('project-only path with no sessions still resolves to project view', () => {
+    expect(resolveViewFromPath('/gmux', projects, [])).toEqual({
+      kind: 'project', projectSlug: 'gmux',
+    })
+  })
+
+  it('unknown project resolves to home', () => {
+    expect(resolveViewFromPath('/unknown', projects, sessions)).toEqual({ kind: 'home' })
+  })
+
+  it('full session path resolves to session view', () => {
+    expect(resolveViewFromPath('/gmux/pi/fix-auth', projects, sessions)).toEqual({
+      kind: 'session', sessionId: 'sess-1',
+    })
+  })
+
+  it('session path with missing session falls back to project view', () => {
+    expect(resolveViewFromPath('/gmux/pi/no-such-session', projects, sessions)).toEqual({
+      kind: 'project', projectSlug: 'gmux',
+    })
+  })
+
+  it('remote session URL resolves to session view', () => {
+    const remoteSess = makeSession({
+      id: 'sess-3@server', cwd: '/dev/gmux', kind: 'shell', resume_key: 'bash',
+      peer: 'server', remotes: { origin: 'github.com/gmuxapp/gmux' },
+    })
+    expect(resolveViewFromPath('/gmux/@server/shell/bash', projects, [...sessions, remoteSess])).toEqual({
+      kind: 'session', sessionId: 'sess-3@server',
+    })
+  })
+
+  it('remote URL with missing session falls back to project view', () => {
+    expect(resolveViewFromPath('/gmux/@server/shell/gone', projects, sessions)).toEqual({
+      kind: 'project', projectSlug: 'gmux',
+    })
+  })
+})
+
+describe('viewToPath', () => {
+  const projects: ProjectItem[] = [
+    { slug: 'gmux', remote: 'github.com/gmuxapp/gmux', paths: ['/dev/gmux'] },
+  ]
+  const sessions = [
+    makeSession({ id: 'sess-1', cwd: '/dev/gmux', kind: 'pi', resume_key: 'fix-auth',
+      remotes: { origin: 'github.com/gmuxapp/gmux' } }),
+    makeSession({ id: 'sess-2@server', cwd: '/dev/gmux', kind: 'shell', resume_key: 'bash',
+      peer: 'server', remotes: { origin: 'github.com/gmuxapp/gmux' } }),
+  ]
+
+  it('home view → /', () => {
+    expect(viewToPath({ kind: 'home' }, projects, sessions)).toBe('/')
+  })
+
+  it('project view → /:project', () => {
+    expect(viewToPath({ kind: 'project', projectSlug: 'gmux' }, projects, sessions)).toBe('/gmux')
+  })
+
+  it('session view → full session path', () => {
+    expect(viewToPath({ kind: 'session', sessionId: 'sess-1' }, projects, sessions))
+      .toBe('/gmux/pi/fix-auth')
+  })
+
+  it('session view with peer → path includes @host', () => {
+    expect(viewToPath({ kind: 'session', sessionId: 'sess-2@server' }, projects, sessions))
+      .toBe('/gmux/@server/shell/bash')
+  })
+
+  it('session view for missing session → null', () => {
+    expect(viewToPath({ kind: 'session', sessionId: 'gone' }, projects, sessions)).toBeNull()
+  })
+
+  it('session view for unmatched session → null', () => {
+    const orphan = makeSession({ id: 'orphan', cwd: '/nowhere', kind: 'pi' })
+    expect(viewToPath({ kind: 'session', sessionId: 'orphan' }, projects, [orphan])).toBeNull()
+  })
+})
+
+describe('viewsEqual', () => {
+  it('same home views are equal', () => {
+    expect(viewsEqual({ kind: 'home' }, { kind: 'home' })).toBe(true)
+  })
+
+  it('same project views are equal', () => {
+    expect(viewsEqual(
+      { kind: 'project', projectSlug: 'a' },
+      { kind: 'project', projectSlug: 'a' },
+    )).toBe(true)
+  })
+
+  it('different project slugs are not equal', () => {
+    expect(viewsEqual(
+      { kind: 'project', projectSlug: 'a' },
+      { kind: 'project', projectSlug: 'b' },
+    )).toBe(false)
+  })
+
+  it('same session views are equal', () => {
+    expect(viewsEqual(
+      { kind: 'session', sessionId: 'x' },
+      { kind: 'session', sessionId: 'x' },
+    )).toBe(true)
+  })
+
+  it('different kinds are not equal', () => {
+    expect(viewsEqual(
+      { kind: 'home' },
+      { kind: 'project', projectSlug: 'a' },
+    )).toBe(false)
+  })
+})
+
+describe('View round-trip', () => {
+  const projects: ProjectItem[] = [
+    { slug: 'gmux', remote: 'github.com/gmuxapp/gmux', paths: ['/dev/gmux'] },
+  ]
+  const sessions = [
+    makeSession({ id: 'sess-1', cwd: '/dev/gmux', kind: 'pi', resume_key: 'fix-auth',
+      remotes: { origin: 'github.com/gmuxapp/gmux' } }),
+  ]
+
+  it('home view round-trips', () => {
+    const path = viewToPath({ kind: 'home' }, projects, sessions)
+    expect(path).toBe('/')
+    expect(resolveViewFromPath(path!, projects, sessions)).toEqual({ kind: 'home' })
+  })
+
+  it('session view round-trips', () => {
+    const path = viewToPath({ kind: 'session', sessionId: 'sess-1' }, projects, sessions)
+    expect(path).toBe('/gmux/pi/fix-auth')
+    expect(resolveViewFromPath(path!, projects, sessions)).toEqual({
+      kind: 'session', sessionId: 'sess-1',
+    })
+  })
+
+  it('project view round-trips regardless of sessions', () => {
+    const path = viewToPath({ kind: 'project', projectSlug: 'gmux' }, projects, sessions)
+    expect(path).toBe('/gmux')
+    expect(viewsEqual(
+      resolveViewFromPath(path!, projects, sessions),
+      { kind: 'project', projectSlug: 'gmux' },
+    )).toBe(true)
+    expect(viewsEqual(
+      resolveViewFromPath(path!, projects, []),
+      { kind: 'project', projectSlug: 'gmux' },
+    )).toBe(true)
+  })
+})
+
+describe('isSessionVisibleInProject', () => {
+  const project: ProjectItem = {
+    slug: 'test', paths: ['/dev/test'], sessions: ['my-session', 'sess-tracked'],
+  }
+
+  it('alive sessions are always visible', () => {
+    const s = makeSession({ id: 'sess-new', cwd: '/dev/test', alive: true })
+    expect(isSessionVisibleInProject(s, project)).toBe(true)
+  })
+
+  it('dead non-resumable sessions are hidden', () => {
+    const s = makeSession({ id: 'sess-gone', cwd: '/dev/test', alive: false, resumable: false })
+    expect(isSessionVisibleInProject(s, project)).toBe(false)
+  })
+
+  it('dead resumable sessions show when resume_key is tracked', () => {
+    const s = makeSession({ id: 'sess-x', cwd: '/dev/test', alive: false, resumable: true, resume_key: 'my-session' })
+    expect(isSessionVisibleInProject(s, project)).toBe(true)
+  })
+
+  it('dead resumable sessions show when id is tracked', () => {
+    const s = makeSession({ id: 'sess-tracked', cwd: '/dev/test', alive: false, resumable: true })
+    expect(isSessionVisibleInProject(s, project)).toBe(true)
+  })
+
+  it('dead resumable sessions are hidden when not tracked', () => {
+    const s = makeSession({ id: 'sess-orphan', cwd: '/dev/test', alive: false, resumable: true, resume_key: 'orphan' })
+    expect(isSessionVisibleInProject(s, project)).toBe(false)
+  })
+
+  it('handles projects with no sessions array', () => {
+    const bare: ProjectItem = { slug: 'bare', paths: ['/dev/bare'] }
+    const s = makeSession({ id: 'sess-x', cwd: '/dev/bare', alive: false, resumable: true })
+    expect(isSessionVisibleInProject(s, bare)).toBe(false)
+  })
+})
+
+describe('parseSessionHostPath', () => {
+  it('treats bare ids as local', () => {
+    expect(parseSessionHostPath('sess-abc')).toEqual({ originalId: 'sess-abc', path: [] })
+  })
+
+  it('extracts a single peer hop', () => {
+    expect(parseSessionHostPath('sess-abc@workstation')).toEqual({
+      originalId: 'sess-abc', path: ['workstation'],
+    })
+  })
+
+  it('reverses nested chains to outermost-first', () => {
+    // On-the-wire (innermost-first): sess-abc@dev@workstation
+    // Means: session sess-abc lives on dev, which is workstation's peer.
+    // UI path (root → leaf): ['workstation', 'dev']
+    expect(parseSessionHostPath('sess-abc@dev@workstation')).toEqual({
+      originalId: 'sess-abc', path: ['workstation', 'dev'],
+    })
+  })
+
+  it('preserves original id characters other than @', () => {
+    expect(parseSessionHostPath('file-abc-123@peer')).toEqual({
+      originalId: 'file-abc-123', path: ['peer'],
+    })
+  })
+})
+
+describe('buildProjectTopology', () => {
+  const projects: ProjectItem[] = [
+    { slug: 'fluxer', paths: ['/home/mg/dev/fluxer'], sessions: [] },
+  ]
+
+  const peers: PeerInfo[] = [
+    { name: 'workstation', url: 'http://100.64.0.2:8790', status: 'connected', session_count: 2 },
+    { name: 'offline-box', url: 'http://10.0.0.9:8790', status: 'disconnected', session_count: 0 },
+  ]
+
+  it('returns empty array for unknown project', () => {
+    expect(buildProjectTopology('ghost', [], projects, peers)).toEqual([])
+  })
+
+  it('returns empty array when project has no sessions', () => {
+    expect(buildProjectTopology('fluxer', [], projects, peers)).toEqual([])
+  })
+
+  it('groups local sessions by cwd', () => {
+    const sessions = [
+      makeSession({ id: 'sess-1', cwd: '/home/mg/dev/fluxer' }),
+      makeSession({ id: 'sess-2', cwd: '/home/mg/dev/fluxer' }),
+      makeSession({ id: 'sess-3', cwd: '/home/mg/dev/fluxer/api' }),
+    ]
+    const hosts = buildProjectTopology('fluxer', sessions, projects, peers)
+    expect(hosts).toHaveLength(1)
+    expect(hosts[0].path).toEqual([])
+    expect(hosts[0].status).toBe('local')
+    expect(hosts[0].folders).toHaveLength(2)
+    expect(hosts[0].folders[0].cwd).toBe('/home/mg/dev/fluxer')
+    expect(hosts[0].folders[0].sessions.map(s => s.id)).toEqual(['sess-1', 'sess-2'])
+    expect(hosts[0].folders[1].cwd).toBe('/home/mg/dev/fluxer/api')
+  })
+
+  it('separates local and peer sessions', () => {
+    const sessions = [
+      makeSession({ id: 'sess-local', cwd: '/home/mg/dev/fluxer' }),
+      makeSession({ id: 'sess-remote@workstation', cwd: '/home/mg/dev/fluxer', peer: 'workstation' }),
+    ]
+    const hosts = buildProjectTopology('fluxer', sessions, projects, peers)
+    expect(hosts).toHaveLength(2)
+    // Local first.
+    expect(hosts[0].path).toEqual([])
+    expect(hosts[0].status).toBe('local')
+    // Peer second.
+    expect(hosts[1].path).toEqual(['workstation'])
+    expect(hosts[1].status).toBe('connected')
+    expect(hosts[1].meta).toBe('http://100.64.0.2:8790')
+  })
+
+  it('nested peers form multi-segment paths', () => {
+    // Nested devcontainer sessions live at paths that don't overlap the
+    // project's local paths, so matchSession relies on git remotes here.
+    const projectsWithRemote: ProjectItem[] = [
+      { slug: 'fluxer', remote: 'github.com/mg/fluxer', paths: ['/home/mg/dev/fluxer'], sessions: [] },
+    ]
+    const sessions = [
+      makeSession({
+        id: 'sess-nested@dev@workstation', cwd: '/workspace/fluxer', peer: 'workstation',
+        remotes: { origin: 'https://github.com/mg/fluxer.git' },
+      }),
+    ]
+    const hosts = buildProjectTopology('fluxer', sessions, projectsWithRemote, peers)
+    expect(hosts).toHaveLength(1)
+    expect(hosts[0].path).toEqual(['workstation', 'dev'])
+    // Nested inherits root peer status.
+    expect(hosts[0].status).toBe('connected')
+  })
+
+  it('marks unknown peers as disconnected', () => {
+    const sessions = [
+      makeSession({ id: 'sess-a@ghost', cwd: '/home/mg/dev/fluxer', peer: 'ghost' }),
+    ]
+    const hosts = buildProjectTopology('fluxer', sessions, projects, peers)
+    expect(hosts).toHaveLength(1)
+    expect(hosts[0].status).toBe('disconnected')
+    expect(hosts[0].meta).toBe('')
+  })
+
+  it('reflects peer status from the peers list', () => {
+    const sessions = [
+      makeSession({ id: 'sess-o@offline-box', cwd: '/home/mg/dev/fluxer', peer: 'offline-box' }),
+    ]
+    const hosts = buildProjectTopology('fluxer', sessions, projects, peers)
+    expect(hosts[0].status).toBe('disconnected')
+  })
+
+  it('sorts peers alphabetically, local first', () => {
+    const peers2: PeerInfo[] = [
+      { name: 'alpha', url: 'http://a', status: 'connected', session_count: 1 },
+      { name: 'bravo', url: 'http://b', status: 'connected', session_count: 1 },
+    ]
+    const sessions = [
+      makeSession({ id: 's-b@bravo', cwd: '/home/mg/dev/fluxer', peer: 'bravo' }),
+      makeSession({ id: 's-a@alpha', cwd: '/home/mg/dev/fluxer', peer: 'alpha' }),
+      makeSession({ id: 's-local', cwd: '/home/mg/dev/fluxer' }),
+    ]
+    const hosts = buildProjectTopology('fluxer', sessions, projects, peers2)
+    expect(hosts.map(h => h.path.join('/') || '(local)')).toEqual(['(local)', 'alpha', 'bravo'])
+  })
+
+  it('sorts sessions within a folder: alive first, then newest-first', () => {
+    // Dead session must be resumable AND in project.sessions[] to pass
+    // the visibility filter (mirrors sidebar behavior).
+    const projectsWithDead: ProjectItem[] = [
+      { slug: 'fluxer', paths: ['/home/mg/dev/fluxer'], sessions: ['dead-old'] },
+    ]
+    const sessions = [
+      makeSession({
+        id: 'dead-old', cwd: '/home/mg/dev/fluxer',
+        alive: false, resumable: true, created_at: '2026-01-01T00:00:00Z',
+      }),
+      makeSession({
+        id: 'alive-old', cwd: '/home/mg/dev/fluxer',
+        alive: true, created_at: '2026-01-02T00:00:00Z',
+      }),
+      makeSession({
+        id: 'alive-new', cwd: '/home/mg/dev/fluxer',
+        alive: true, created_at: '2026-01-03T00:00:00Z',
+      }),
+    ]
+    const hosts = buildProjectTopology('fluxer', sessions, projectsWithDead, peers)
+    expect(hosts[0].folders[0].sessions.map(s => s.id)).toEqual([
+      'alive-new', 'alive-old', 'dead-old',
+    ])
+  })
+
+  it('hides dead non-resumable sessions', () => {
+    const sessions = [
+      makeSession({ id: 'alive-1', cwd: '/home/mg/dev/fluxer', alive: true }),
+      makeSession({ id: 'dead-1', cwd: '/home/mg/dev/fluxer', alive: false, resumable: false }),
+    ]
+    const hosts = buildProjectTopology('fluxer', sessions, projects, peers)
+    expect(hosts[0].folders[0].sessions.map(s => s.id)).toEqual(['alive-1'])
+  })
+
+  it('hides resumable sessions not tracked in project.sessions[]', () => {
+    const sessions = [
+      makeSession({ id: 'alive-1', cwd: '/home/mg/dev/fluxer', alive: true }),
+      // Dead, resumable, but not in project.sessions[] → filtered out.
+      makeSession({
+        id: 'orphan', cwd: '/home/mg/dev/fluxer',
+        alive: false, resumable: true,
+      }),
+    ]
+    const hosts = buildProjectTopology('fluxer', sessions, projects, peers)
+    expect(hosts[0].folders[0].sessions.map(s => s.id)).toEqual(['alive-1'])
+  })
+
+  it('filters sessions by project match (ignores unrelated sessions)', () => {
+    const projects2: ProjectItem[] = [
+      { slug: 'fluxer', paths: ['/home/mg/dev/fluxer'], sessions: [] },
+      { slug: 'other', paths: ['/home/mg/dev/other'], sessions: [] },
+    ]
+    const sessions = [
+      makeSession({ id: 'f1', cwd: '/home/mg/dev/fluxer' }),
+      makeSession({ id: 'o1', cwd: '/home/mg/dev/other' }),
+    ]
+    const hosts = buildProjectTopology('fluxer', sessions, projects2, peers)
+    expect(hosts).toHaveLength(1)
+    expect(hosts[0].folders[0].sessions.map(s => s.id)).toEqual(['f1'])
   })
 })

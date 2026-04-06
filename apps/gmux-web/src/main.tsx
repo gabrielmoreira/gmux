@@ -12,9 +12,12 @@ import { fetchFrontendConfig, buildTerminalOptions, resolveKeybinds, type Resolv
 import { useArrivalPulse } from './use-arrival-pulse'
 import { useActivityTracker } from './use-activity'
 
-import type { Session, Folder } from './types'
+import type { Session, Folder, View, PeerInfo } from './types'
 import { ManageProjectsModal } from './manage-projects'
-import { buildProjectFolders, parseSessionPath, sessionPath, resolveSessionFromPath, matchSession } from './types'
+import { buildProjectFolders, matchSession, resolveViewFromPath, sessionPath, viewToPath } from './types'
+import { ProjectHub } from './project-hub'
+import type { LauncherDef } from './launcher'
+import { LaunchButton, fetchConfig, invalidateConfigCache, launchSession, consumePendingLaunch } from './launcher'
 import { getMockFolders } from './mock-data/index'
 import { installCopySession } from './mock-data/export-session'
 import type { Session as ProtocolSession } from '@gmux/protocol'
@@ -65,13 +68,6 @@ async function fetchSessions(): Promise<Session[]> {
   return data.map(toUISession)
 }
 
-interface PeerInfo {
-  name: string
-  url: string
-  status: string
-  session_count: number
-}
-
 async function fetchPeers(): Promise<PeerInfo[]> {
   try {
     const resp = await fetch('/v1/peers')
@@ -113,22 +109,6 @@ async function restartSession(sessionId: string): Promise<void> {
   await postAction(`/v1/sessions/${sessionId}/restart`)
 }
 
-// ── Launcher types & config ──
-
-interface LauncherDef {
-  id: string
-  label: string
-  command: string[]
-  description?: string
-  available: boolean
-}
-
-interface LaunchConfig {
-  default_launcher: string
-  launchers: LauncherDef[]
-  peers?: Record<string, { default_launcher: string; launchers: LauncherDef[] }>
-}
-
 interface HealthData {
   version: string
   tailscale_url?: string
@@ -153,166 +133,6 @@ async function fetchHealth(): Promise<HealthData | null> {
 function maskTailnet(url: string): string {
   return url.replace(/(\.\w{2})[^.]*(?=\.ts\.net)/, '$1****')
 }
-
-let _configCache: LaunchConfig | null = null
-
-async function fetchConfig(): Promise<LaunchConfig> {
-  if (_configCache) return _configCache
-  try {
-    const resp = await fetch('/v1/config')
-    const json = await resp.json()
-    _configCache = json.data ?? json
-    return _configCache!
-  } catch {
-    return { default_launcher: 'shell', launchers: [{ id: 'shell', label: 'Shell', command: [], available: true }] }
-  }
-}
-
-function invalidateConfigCache() {
-  _configCache = null
-}
-
-/** Return launchers for a specific peer, falling back to local config. */
-function launchersForPeer(config: LaunchConfig, peer: string | undefined): { default_launcher: string; launchers: LauncherDef[] } {
-  if (peer && config.peers?.[peer]) return config.peers[peer]
-  return config
-}
-
-async function launchSession(launcherId: string, opts?: { cwd?: string; peer?: string }): Promise<void> {
-  await postAction('/v1/launch', { launcher_id: launcherId, cwd: opts?.cwd, peer: opts?.peer })
-}
-
-
-// ── LaunchButton - transforms into inline menu on click ──
-//
-// Idle:      [+]
-// Open:      [+ button becomes default item] → other items appear below
-// Launching: [spinner]
-//
-// Double-click works because the default item occupies the exact same
-// position as the + button. First click opens, second click hits default.
-
-// Track pending launches globally so App can auto-select new sessions
-let _pendingLaunchAt = 0
-
-function LaunchButton({ cwd, peer, className, onLaunch }: { cwd?: string; peer?: string; className?: string; onLaunch?: () => void }) {
-  const [state, setState] = useState<'idle' | 'loading' | 'open' | 'launching'>('idle')
-  const [config, setConfig] = useState<LaunchConfig | null>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  // Pre-fetch config on first hover so open is instant
-  const handleMouseEnter = () => {
-    if (!config) fetchConfig().then(setConfig)
-  }
-
-  const handleClick = (e: MouseEvent) => {
-    e.stopPropagation()
-    if (state === 'idle') {
-      if (config) {
-        setState('open')
-      } else {
-        setState('loading')
-        fetchConfig().then(cfg => {
-          setConfig(cfg)
-          setState('open')
-        })
-      }
-    } else if (state === 'open') {
-      setState('idle')
-    }
-  }
-
-  const handleLaunch = (id: string) => {
-    setState('launching')
-    _pendingLaunchAt = Date.now()
-    onLaunch?.()
-    launchSession(id, { cwd, peer }).finally(() => {
-      // Reset after a short delay to show spinner
-      setTimeout(() => setState('idle'), 600)
-    })
-  }
-
-  // Close on outside click
-  useEffect(() => {
-    if (state !== 'open') return
-    const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setState('idle')
-      }
-    }
-    const timer = setTimeout(() => document.addEventListener('mousedown', handler), 0)
-    return () => {
-      clearTimeout(timer)
-      document.removeEventListener('mousedown', handler)
-    }
-  }, [state])
-
-  // Close on Escape
-  useEffect(() => {
-    if (state !== 'open') return
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setState('idle') }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [state])
-
-  const isOpen = state === 'open' && config
-  const isLoading = state === 'launching' || state === 'loading'
-
-  let defaultLauncher: LauncherDef | undefined
-  let others: LauncherDef[] = []
-  if (isOpen && config) {
-    const resolved = launchersForPeer(config, peer)
-    defaultLauncher = resolved.launchers.find(l => l.id === resolved.default_launcher)
-    others = resolved.launchers.filter(l => l.id !== resolved.default_launcher)
-  }
-
-  // Always render the + button for stable layout. Menu overlays on top.
-  return (
-    <div class={`launch-container ${className ?? ''}`} ref={containerRef} onMouseEnter={handleMouseEnter}>
-      <button
-        class={`launch-btn ${isLoading ? 'loading' : ''}`}
-        title={cwd ? `New session in ${cwd}` : 'New session in ~'}
-        onClick={handleClick}
-      >
-        {isLoading ? (
-          <svg viewBox="0 0 16 16" width="14" height="14" class="spin">
-            <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round" />
-          </svg>
-        ) : '+'}
-      </button>
-      {isOpen && (
-        <div class="launch-inline-menu">
-          {defaultLauncher && (
-            <button
-              class="launch-inline-item launch-inline-default"
-              onClick={(e) => { e.stopPropagation(); handleLaunch(defaultLauncher!.id) }}
-            >
-              <span class="launch-inline-label">{defaultLauncher.label}</span>
-              <span class="launch-inline-desc">{defaultLauncher.description ?? ''}</span>
-            </button>
-          )}
-          {others.length > 0 && (
-            <div class="launch-inline-divider" />
-          )}
-          {others.map((l, i) => (
-            <button
-              key={l.id}
-              class="launch-inline-item"
-              style={{ animationDelay: `${(i + 1) * 50}ms` }}
-              onClick={(e) => { e.stopPropagation(); handleLaunch(l.id) }}
-            >
-              <span class="launch-inline-label">{l.label}</span>
-              <span class="launch-inline-desc">{l.description ?? ''}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Utilities ──
 
 // ── Components ──
 
@@ -390,28 +210,39 @@ function SessionItem({
 function FolderGroup({
   folder,
   selectedId,
+  currentProjectSlug,
   resumingId,
   isSessionActive,
   isSessionFading,
   onSelect,
+  onSelectProject,
   onCloseSession,
 }: {
   folder: Folder
   selectedId: string | null
+  currentProjectSlug: string | null
   resumingId: string | null
   isSessionActive: (id: string) => boolean
   isSessionFading: (id: string) => boolean
   onSelect: (id: string) => void
+  onSelectProject: (slug: string) => void
   onCloseSession: (session: Session) => void
 }) {
   // Show alive sessions + resumable sessions that died on their own.
   // Non-resumable dead sessions are filtered out.
   const visible = folder.sessions.filter(s => s.alive || s.resumable)
 
+  const isCurrent = currentProjectSlug === folder.path
   return (
     <div class="folder">
       <div class="folder-header">
-        <div class="folder-name">{folder.name}</div>
+        <button
+          class={`folder-name${isCurrent ? ' current' : ''}`}
+          onClick={() => onSelectProject(folder.path)}
+          title={`Open ${folder.name} hub`}
+        >
+          {folder.name}
+        </button>
         <LaunchButton cwd={folder.sessions[0]?.cwd ?? folder.launchCwd} className="folder-launch-btn" />
       </div>
       <div class="folder-sessions">
@@ -436,32 +267,36 @@ function Sidebar({
   folders,
   unmatchedActiveCount,
   selectedId,
+  currentProjectSlug,
   resumingId,
   isSessionActive,
   isSessionFading,
   onSelect,
+  onSelectProject,
+  onGoHome,
   onCloseSession,
   onManageProjects,
   open,
   onClose,
   health,
-  peers,
   notifPermission,
   onRequestNotifPermission,
 }: {
   folders: Folder[]
   unmatchedActiveCount: number
   selectedId: string | null
+  currentProjectSlug: string | null
   resumingId: string | null
   isSessionActive: (id: string) => boolean
   isSessionFading: (id: string) => boolean
   onSelect: (id: string) => void
+  onSelectProject: (slug: string) => void
+  onGoHome: () => void
   onCloseSession: (session: Session) => void
   onManageProjects: () => void
   open: boolean
   onClose: () => void
   health: HealthData | null
-  peers: PeerInfo[]
   notifPermission: NotifPermission
   onRequestNotifPermission: () => void
 }) {
@@ -472,7 +307,12 @@ function Sidebar({
       <div class={`sidebar-overlay ${open ? 'visible' : ''}`} onClick={onClose} />
       <aside class={`sidebar ${open ? 'open' : ''}`}>
         <div class="sidebar-header">
-          <div class="sidebar-logo">gmux</div>
+          <button
+            type="button"
+            class="sidebar-logo"
+            title="Home"
+            onClick={() => { onGoHome(); onClose() }}
+          >gmux</button>
           {health?.version ? (
             <a
               class={`sidebar-badge${health.update_available ? ' sidebar-badge-update' : ''}`}
@@ -495,11 +335,16 @@ function Sidebar({
               key={f.path}
               folder={f}
               selectedId={selectedId}
+              currentProjectSlug={currentProjectSlug}
               resumingId={resumingId}
               isSessionActive={isSessionActive}
               isSessionFading={isSessionFading}
               onSelect={(id) => {
                 onSelect(id)
+                onClose()
+              }}
+              onSelectProject={(slug) => {
+                onSelectProject(slug)
                 onClose()
               }}
               onCloseSession={onCloseSession}
@@ -517,16 +362,6 @@ function Sidebar({
           )}
         </div>
         <div class="sidebar-footer">
-          {peers.length > 0 && (
-            <div class="peers-status">
-              {peers.map(p => (
-                <div key={p.name} class="peer-status-item">
-                  <span class={`peer-dot ${p.status}`} />
-                  <span class="peer-name">{p.name}</span>
-                </div>
-              ))}
-            </div>
-          )}
           <button class="manage-projects-btn" onClick={onManageProjects}>
             Manage projects
             {unmatchedActiveCount > 0 && (
@@ -554,7 +389,6 @@ function EmptyState({ launchers, health }: { launchers: LauncherDef[]; health: H
 
   const handleLaunch = (id: string) => {
     setLaunching(id)
-    _pendingLaunchAt = Date.now()
     launchSession(id).finally(() => setLaunching(null))
   }
 
@@ -868,7 +702,6 @@ function App() {
 
   const loc = useLocation()
   const [sessions, setSessions] = useState<Session[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [manageProjectsOpen, setManageProjectsOpen] = useState(false)
   const [connState, setConnState] = useState<ConnectionState>('connecting')
@@ -880,10 +713,6 @@ function App() {
   const [sidebarVersion, forceUpdate] = useState(0) // re-render on sidebar state change
   const { isActive: isSessionActive, isFading: isSessionFading, handleActivity, activityVersion } = useActivityTracker()
 
-  // Ref for selectedId so effects can read the latest value without
-  // adding it to their dependency arrays (avoids circular triggers).
-  const selectedIdRef = useRef(selectedId)
-  selectedIdRef.current = selectedId
   const terminalInputRef = useRef<((data: string) => void) | null>(null)
   const terminalFocusRef = useRef<(() => void) | null>(null)
   const terminalPasteRef = useRef<((text: string) => void) | null>(null)
@@ -966,9 +795,9 @@ function App() {
             return [...prev, updated]
           })
           // Auto-select newly launched sessions
-          if (isNew && _pendingLaunchAt && Date.now() - _pendingLaunchAt < 10_000) {
-            _pendingLaunchAt = 0
-            setSelectedId(updated.id)
+          if (isNew && consumePendingLaunch()) {
+            const project = matchSession(updated, sidebarState.configured)
+            if (project) loc.route(sessionPath(project.slug, updated), true)
           }
         } catch (err) {
           console.warn('session-upsert: bad event', err)
@@ -1014,6 +843,16 @@ function App() {
     })
   }, [sessions])
 
+  // `view` is derived from the URL. The URL is the single source of truth:
+  // actions that change what's shown navigate (loc.route), never setView.
+  // Null until we've loaded projects/sessions at least once so we don't
+  // render a bogus home/project view before data arrives.
+  const view = useMemo<View | null>(() => {
+    if (filteredSessions.length === 0 && sidebarState.configured.length === 0) return null
+    return resolveViewFromPath(loc.path, sidebarState.configured, filteredSessions)
+  }, [loc.path, filteredSessions, sidebarVersion])
+  const selectedId = view?.kind === 'session' ? view.sessionId : null
+
   const folders = useMemo(
     () => buildProjectFolders(sidebarState.configured, filteredSessions),
     [filteredSessions, sidebarVersion],
@@ -1042,40 +881,17 @@ function App() {
     [sessions, selectedId],
   )
 
-  // --- URL <-> selection sync ---
-  // Two effects form a bidirectional binding between the URL bar and selectedId.
-  // Effect A: URL changes (initial load, browser back/forward) resolve to a session.
-  // Effect B: selection or session data changes update the URL bar.
-  // Loop prevention: effects check whether the value actually changed before writing.
-
-  // Effect A: URL -> selection.
+  // --- URL normalization ---
+  // The URL is the single source of truth; `view` is derived above. This
+  // effect only *normalizes* the URL when it drifts from the view: it
+  // rewrites `/:project` → `/:project/:kind/:slug` when the URL resolved
+  // to a specific session, and falls back to the project hub (or home)
+  // when the session we were viewing disappeared.
   useEffect(() => {
-    if (filteredSessions.length === 0) return
-    const parsed = parseSessionPath(loc.path)
-    if (parsed.project) {
-      const resolved = resolveSessionFromPath(parsed, sidebarState.configured, filteredSessions)
-      if (resolved && resolved !== selectedIdRef.current) {
-        setSelectedId(resolved)
-        return
-      }
-    }
-    // No URL match: auto-select if nothing is selected yet.
-    if (!selectedIdRef.current) {
-      const best = filteredSessions.find(s => s.alive && (s.socket_path || s.peer))
-      if (best) setSelectedId(best.id)
-    }
-  }, [loc.path, filteredSessions, sidebarVersion])
-
-  // Effect B: selection -> URL.
-  useEffect(() => {
-    if (!selectedId) return
-    const sess = sessions.find(s => s.id === selectedId)
-    if (!sess) return
-    const project = matchSession(sess, sidebarState.configured)
-    if (!project) return
-    const url = sessionPath(project.slug, sess)
-    if (loc.path !== url) loc.route(url, true) // replace, don't create history entries
-  }, [selectedId, sessions, sidebarVersion])
+    if (view === null) return
+    const url = viewToPath(view, sidebarState.configured, sessions)
+    if (url && url !== loc.path) loc.route(url, true)
+  }, [view, sessions, sidebarVersion, loc.path])
 
   // Mark as read when selecting a session, or when attention flags (unread,
   // error) appear while we're already looking at it (e.g. a turn completes,
@@ -1105,7 +921,8 @@ function App() {
 
   const handleSelect = useCallback((id: string) => {
     const sess = sessions.find(s => s.id === id)
-    if (sess?.resumable) {
+    if (!sess) return
+    if (sess.resumable) {
       // Resume: show spinner, send request, wait for SSE to make it alive.
       setResumingId(id)
       resumeSession(id).catch(err => {
@@ -1115,24 +932,26 @@ function App() {
       return
     }
     setResumingId(null) // cancel any pending resume auto-select
-    setSelectedId(id)
+    const project = matchSession(sess, sidebarState.configured)
+    if (project) loc.route(sessionPath(project.slug, sess))
     setCtrlArmed(false)
     setAltArmed(false)
     // Focus the terminal so the user can type immediately.
     // requestAnimationFrame lets React flush the state update first.
     requestAnimationFrame(() => terminalFocusRef.current?.())
-  }, [sessions])
+  }, [sessions, loc, sidebarVersion])
 
   // When a resumed session comes alive, select it.
   useEffect(() => {
     if (resumingId) {
       const sess = sessions.find(s => s.id === resumingId)
       if (sess?.alive && sess?.socket_path) {
-        setSelectedId(resumingId)
+        const project = matchSession(sess, sidebarState.configured)
+        if (project) loc.route(sessionPath(project.slug, sess), true)
         setResumingId(null)
       }
     }
-  }, [sessions, resumingId])
+  }, [sessions, resumingId, sidebarVersion])
 
   // Resume timeout - clear after 10s if the session never came alive.
   useEffect(() => {
@@ -1143,15 +962,14 @@ function App() {
 
   const canAttach = !!selected?.alive && (!!selected?.socket_path || !!selected?.peer) && !USE_MOCK
 
-  // Deselect only when the session is gone from the store (dismissed/purged).
-  // Dead-but-present sessions stay selected so the header persists through
-  // restart cycles and briefly-stalled new sessions don't flash.
+  // Clear modifier state when the terminal isn't attachable. Dead-but-present
+  // sessions stay in view so the header persists through restart cycles.
+  // Gone-from-store sessions are handled by Effect A, which re-resolves the
+  // URL and falls back to the project (or home) view when the session
+  // disappears.
   useEffect(() => {
     if (!canAttach) { setCtrlArmed(false); setAltArmed(false) }
-    if (selectedId && !selected) {
-      setSelectedId(null)
-    }
-  }, [canAttach, selectedId, selected])
+  }, [canAttach])
 
   const handleTerminalInputReady = useCallback((send: ((data: string) => void) | null) => {
     terminalInputRef.current = send
@@ -1222,10 +1040,16 @@ function App() {
     n.onclose = () => activeNotifsRef.current.delete(msg.id)
     n.onclick = () => {
       window.focus()
-      if (msg.session_id) setSelectedId(msg.session_id)
+      if (msg.session_id) {
+        const sess = sessions.find(s => s.id === msg.session_id)
+        if (sess) {
+          const project = matchSession(sess, sidebarState.configured)
+          if (project) loc.route(sessionPath(project.slug, sess))
+        }
+      }
       n.close()
     }
-  }, [])
+  }, [sessions, loc, sidebarVersion])
 
   // Dismiss a notification when the daemon tells us to (e.g. user opened
   // the session on another device).
@@ -1291,16 +1115,18 @@ function App() {
         folders={folders}
         unmatchedActiveCount={sidebarState.unmatchedActiveCount}
         selectedId={selectedId}
+        currentProjectSlug={view?.kind === 'project' ? view.projectSlug : null}
         resumingId={resumingId}
         isSessionActive={isSessionActive}
         isSessionFading={isSessionFading}
         onSelect={handleSelect}
+        onSelectProject={(slug) => loc.route(`/${slug}`)}
+        onGoHome={() => loc.route('/')}
         onCloseSession={handleCloseSession}
         onManageProjects={() => { setSidebarOpen(false); setManageProjectsOpen(true) }}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         health={health}
-        peers={peers}
         notifPermission={notifPermission}
         onRequestNotifPermission={handleRequestNotifPermission}
       />
@@ -1312,10 +1138,12 @@ function App() {
       />
 
       <div class="main-panel">
-        <MainHeader
-          session={selected}
-          onRestart={selected ? () => { restartSession(selected.id).catch(err => console.error('restart failed:', err)) } : undefined}
-        />
+        {view?.kind !== 'project' && (
+          <MainHeader
+            session={selected}
+            onRestart={selected ? () => { restartSession(selected.id).catch(err => console.error('restart failed:', err)) } : undefined}
+          />
+        )}
 
         {connState === 'connecting' ? (
           <div class="state-message">
@@ -1332,6 +1160,15 @@ function App() {
               Retry
             </button>
           </div>
+        ) : view?.kind === 'project' ? (
+          <ProjectHub
+            projectSlug={view.projectSlug}
+            sessions={sessions}
+            projects={sidebarState.configured}
+            peers={peers}
+            onSelectSession={handleSelect}
+            onCloseSession={handleCloseSession}
+          />
         ) : selected && (canAttach || USE_MOCK) && terminalOptions && keybinds ? (
           <TerminalView
             session={selected}
