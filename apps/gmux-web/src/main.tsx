@@ -3,24 +3,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { LocationProvider, Router, Route, lazy, useLocation } from 'preact-iso'
 import '@xterm/xterm/css/xterm.css'
 import './styles.css'
-import { createSidebarState } from './sidebar-state'
 import { connectPresence } from './presence'
 import type { NotifyMessage, CancelMessage } from './presence'
 import { TerminalView } from './terminal'
-import type { ITerminalOptions } from '@xterm/xterm'
-import { fetchFrontendConfig, buildTerminalOptions, resolveKeybinds, type ResolvedKeybind } from './config'
 import { useArrivalPulse } from './use-arrival-pulse'
-import { useActivityTracker } from './use-activity'
+import { useSessionData, sidebarState } from './use-session-data'
+import type { HealthData } from './use-session-data'
 
-import type { Session, Folder, View, PeerInfo } from './types'
+import type { Session, Folder, View } from './types'
 import { ManageProjectsModal } from './manage-projects'
 import { buildProjectFolders, matchSession, resolveViewFromPath, sessionPath, viewToPath } from './types'
 import { ProjectHub } from './project-hub'
 import type { LauncherDef } from './launcher'
-import { LaunchButton, fetchConfig, invalidateConfigCache, launchSession, consumePendingLaunch } from './launcher'
-import { MOCK_SESSIONS, MOCK_PROJECTS } from './mock-data/index'
+import { LaunchButton, launchSession, consumePendingLaunch } from './launcher'
 import { installCopySession } from './mock-data/export-session'
-import type { Session as ProtocolSession } from '@gmux/protocol'
 
 // Lazy-loaded routes (code-split, not bundled with the main app)
 const InputDiagnostics = lazy(() => import('./input-diagnostics'))
@@ -34,52 +30,6 @@ if (USE_MOCK) document.documentElement.classList.add('mock-mode')
 
 // Debug: __gmuxCopySession() in devtools console
 installCopySession()
-
-/** Map protocol session (partial fields) to UI session (all fields required) */
-function toUISession(s: ProtocolSession): Session {
-  return {
-    id: s.id,
-    created_at: s.created_at ?? new Date().toISOString(),
-    command: s.command ?? [],
-    cwd: s.cwd ?? '',
-    workspace_root: s.workspace_root ?? undefined,
-    remotes: s.remotes ?? undefined,
-    kind: s.kind ?? 'shell',
-    alive: s.alive,
-    pid: s.pid ?? null,
-    exit_code: s.exit_code ?? null,
-    started_at: s.started_at ?? s.created_at ?? new Date().toISOString(),
-    exited_at: s.exited_at ?? null,
-    title: s.title ?? s.command?.[0] ?? 'session',
-    subtitle: s.subtitle ?? '',
-    status: s.status ?? null,
-    unread: s.unread ?? false,
-    resumable: s.resumable ?? false,
-    socket_path: s.socket_path ?? '',
-    terminal_cols: s.terminal_cols ?? undefined,
-    terminal_rows: s.terminal_rows ?? undefined,
-    resume_key: s.resume_key ?? undefined,
-    stale: s.stale ?? false,
-    peer: s.peer ?? undefined,
-  }
-}
-
-async function fetchSessions(): Promise<Session[]> {
-  const resp = await fetch('/v1/sessions')
-  const json = await resp.json()
-  const data: ProtocolSession[] = json?.data ?? []
-  return data.map(toUISession)
-}
-
-async function fetchPeers(): Promise<PeerInfo[]> {
-  try {
-    const resp = await fetch('/v1/peers')
-    const json = await resp.json()
-    return json?.data ?? []
-  } catch {
-    return []
-  }
-}
 
 async function postAction(endpoint: string, body?: Record<string, unknown>): Promise<void> {
   try {
@@ -112,26 +62,6 @@ async function restartSession(sessionId: string): Promise<void> {
   await postAction(`/v1/sessions/${sessionId}/restart`)
 }
 
-interface HealthData {
-  version: string
-  tailscale_url?: string
-  update_available?: string
-}
-
-let _healthCache: HealthData | null = null
-
-async function fetchHealth(): Promise<HealthData | null> {
-  if (_healthCache) return _healthCache
-  try {
-    const resp = await fetch('/v1/health')
-    const json = await resp.json()
-    _healthCache = json.data ?? null
-    return _healthCache
-  } catch {
-    return null
-  }
-}
-
 /** Mask tailnet name for privacy: "https://gmux.angler-map.ts.net" → "https://gmux.an****.ts.net" */
 function maskTailnet(url: string): string {
   return url.replace(/(\.\w{2})[^.]*(?=\.ts\.net)/, '$1****')
@@ -153,20 +83,25 @@ function sessionDotState(session: Session, isActive?: boolean, isFading?: boolea
 
 function SessionItem({
   session,
+  href,
   selected,
   resuming,
   isActive,
   isFading,
-  onClick,
+  onResume,
   onClose,
+  onClick,
 }: {
   session: Session
+  href: string
   selected: boolean
   resuming?: boolean
   isActive?: boolean
   isFading?: boolean
-  onClick: () => void
+  onResume?: (id: string) => void
   onClose?: () => void
+  /** Extra side-effects on click (e.g. close mobile sidebar). */
+  onClick?: () => void
 }) {
   const rawDotState = resuming ? 'working' : sessionDotState(session, isActive, isFading)
   // Nothing is "unread" if you're already looking at it.
@@ -175,9 +110,20 @@ function SessionItem({
   const sleeping = !session.alive && session.resumable
 
   return (
-    <div
+    <a
       class={`session-item ${selected ? 'selected' : ''}`}
-      onClick={onClick}
+      href={href}
+      onClick={(e) => {
+        onClick?.()
+        if (sleeping) {
+          // Resumable: don't navigate yet; trigger resume and let the
+          // auto-select effect navigate once the session comes alive.
+          e.preventDefault()
+          onResume?.(session.id)
+        }
+        // Alive sessions: let the click propagate to preact-iso's
+        // document click handler, which does client-side navigation.
+      }}
       onAuxClick={(e) => { if (e.button === 1 && onClose) { e.preventDefault(); onClose() } }}
     >
       {sleeping
@@ -200,13 +146,13 @@ function SessionItem({
       {onClose && (
         <button
           class="session-close-btn"
-          onClick={(e) => { e.stopPropagation(); onClose() }}
+          onClick={(e) => { e.stopPropagation(); e.preventDefault(); onClose() }}
           title={session.alive ? 'Kill session' : 'Dismiss'}
         >
           ×
         </button>
       )}
-    </div>
+    </a>
   )
 }
 
@@ -217,9 +163,9 @@ function FolderGroup({
   resumingId,
   isSessionActive,
   isSessionFading,
-  onSelect,
-  onSelectProject,
+  onResume,
   onCloseSession,
+  onClick,
 }: {
   folder: Folder
   selectedId: string | null
@@ -227,9 +173,10 @@ function FolderGroup({
   resumingId: string | null
   isSessionActive: (id: string) => boolean
   isSessionFading: (id: string) => boolean
-  onSelect: (id: string) => void
-  onSelectProject: (slug: string) => void
+  onResume: (id: string) => void
   onCloseSession: (session: Session) => void
+  /** Extra side-effects on click (e.g. close mobile sidebar). */
+  onClick?: () => void
 }) {
   // Show alive sessions + resumable sessions that died on their own.
   // Non-resumable dead sessions are filtered out.
@@ -239,13 +186,14 @@ function FolderGroup({
   return (
     <div class="folder">
       <div class="folder-header">
-        <button
+        <a
           class={`folder-name${isCurrent ? ' current' : ''}`}
-          onClick={() => onSelectProject(folder.path)}
+          href={`/${folder.path}`}
           title={`Open ${folder.name} hub`}
+          onClick={onClick}
         >
           {folder.name}
-        </button>
+        </a>
         <LaunchButton cwd={folder.sessions[0]?.cwd ?? folder.launchCwd} className="folder-launch-btn" />
       </div>
       <div class="folder-sessions">
@@ -253,12 +201,14 @@ function FolderGroup({
           <SessionItem
             key={s.id}
             session={s}
+            href={sessionPath(folder.path, s)}
             selected={selectedId === s.id}
             resuming={resumingId === s.id}
             isActive={isSessionActive(s.id)}
             isFading={isSessionFading(s.id)}
-            onClick={() => onSelect(s.id)}
+            onResume={onResume}
             onClose={() => onCloseSession(s)}
+            onClick={onClick}
           />
         ))}
       </div>
@@ -274,9 +224,7 @@ function Sidebar({
   resumingId,
   isSessionActive,
   isSessionFading,
-  onSelect,
-  onSelectProject,
-  onGoHome,
+  onResume,
   onCloseSession,
   onManageProjects,
   open,
@@ -292,9 +240,7 @@ function Sidebar({
   resumingId: string | null
   isSessionActive: (id: string) => boolean
   isSessionFading: (id: string) => boolean
-  onSelect: (id: string) => void
-  onSelectProject: (slug: string) => void
-  onGoHome: () => void
+  onResume: (id: string) => void
   onCloseSession: (session: Session) => void
   onManageProjects: () => void
   open: boolean
@@ -310,12 +256,11 @@ function Sidebar({
       <div class={`sidebar-overlay ${open ? 'visible' : ''}`} onClick={onClose} />
       <aside class={`sidebar ${open ? 'open' : ''}`}>
         <div class="sidebar-header">
-          <button
-            type="button"
+          <a
             class="sidebar-logo"
-            title="Home"
-            onClick={() => { onGoHome(); onClose() }}
-          >gmux</button>
+            href="/"
+            onClick={onClose}
+          >gmux</a>
           {health?.version ? (
             <a
               class={`sidebar-badge${health.update_available ? ' sidebar-badge-update' : ''}`}
@@ -342,15 +287,9 @@ function Sidebar({
               resumingId={resumingId}
               isSessionActive={isSessionActive}
               isSessionFading={isSessionFading}
-              onSelect={(id) => {
-                onSelect(id)
-                onClose()
-              }}
-              onSelectProject={(slug) => {
-                onSelectProject(slug)
-                onClose()
-              }}
+              onResume={onResume}
               onCloseSession={onCloseSession}
+              onClick={onClose}
             />
           )) : (
             <div class="sidebar-empty">
@@ -684,10 +623,6 @@ function MobileTerminalBar({
 
 // ── App ──
 
-type ConnectionState = 'connecting' | 'connected' | 'error'
-
-const sidebarState = createSidebarState()
-
 function App() {
   // Track visual viewport height for keyboard-aware layout.
   // dvh doesn't respond to the virtual keyboard; visualViewport does.
@@ -704,17 +639,26 @@ function App() {
   }, [])
 
   const loc = useLocation()
-  const [sessions, setSessions] = useState<Session[]>([])
+
+  // Auto-select newly launched sessions arriving via SSE.
+  const handleNewSession = useCallback((updated: Session) => {
+    if (consumePendingLaunch()) {
+      const project = matchSession(updated, sidebarState.configured)
+      if (project) loc.route(sessionPath(project.slug, updated), true)
+    }
+  }, [loc])
+
+  const {
+    sessions, sessionsLoaded, connState, setSessions,
+    peers, launchers, health, sidebarVersion,
+    isSessionActive, isSessionFading, activityVersion,
+    terminalOptions, keybinds, macCommandIsCtrl,
+  } = useSessionData(handleNewSession)
+
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [manageProjectsOpen, setManageProjectsOpen] = useState(false)
-  const [connState, setConnState] = useState<ConnectionState>('connecting')
-  const [peers, setPeers] = useState<PeerInfo[]>([])
   const [ctrlArmed, setCtrlArmed] = useState(false)
   const [altArmed, setAltArmed] = useState(false)
-  const [launchers, setLaunchers] = useState<LauncherDef[]>([])
-  const [health, setHealth] = useState<HealthData | null>(null)
-  const [sidebarVersion, forceUpdate] = useState(0) // re-render on sidebar state change
-  const { isActive: isSessionActive, isFading: isSessionFading, handleActivity, activityVersion } = useActivityTracker()
 
   const terminalInputRef = useRef<((data: string) => void) | null>(null)
   const terminalFocusRef = useRef<(() => void) | null>(null)
@@ -727,122 +671,6 @@ function App() {
   const activeNotifsRef   = useRef<Map<string, Notification>>(new Map())
   const presenceRef       = useRef<ReturnType<typeof connectPresence> | null>(null)
   const lastInteractionRef = useRef(Date.now() / 1000)
-
-  const [terminalOptions, setTerminalOptions] = useState<ITerminalOptions | null>(null)
-  const [keybinds, setKeybinds] = useState<ResolvedKeybind[] | null>(null)
-  const [macCommandIsCtrl, setMacCommandIsCtrl] = useState(false)
-
-  useEffect(() => { fetchConfig().then(cfg => setLaunchers(cfg.launchers)) }, [])
-  useEffect(() => { fetchHealth().then(setHealth) }, [])
-  useEffect(() => { fetchPeers().then(setPeers) }, [])
-  useEffect(() => {
-    fetchFrontendConfig().then(fc => {
-      const macCtrl = fc.settings?.macCommandIsCtrl === true
-      setTerminalOptions(buildTerminalOptions(fc.settings, fc.themeColors))
-      setMacCommandIsCtrl(macCtrl)
-      setKeybinds(resolveKeybinds(fc.settings?.keybinds ?? null, macCtrl))
-    })
-  }, [])
-
-  // Subscribe to sidebar state changes for re-render
-  useEffect(() => sidebarState.subscribe(() => forceUpdate(n => n + 1)), [])
-
-  // Refresh timestamps every 60s
-  useEffect(() => {
-    const timer = setInterval(() => forceUpdate(n => n + 1), 60_000)
-    return () => clearInterval(timer)
-  }, [])
-
-  // Load data
-  useEffect(() => {
-    if (USE_MOCK) {
-      // ?host=laptop hides the peer pill for sessions on the local machine
-      const localHost = new URLSearchParams(location.search).get('host')
-      const sessions = localHost
-        ? MOCK_SESSIONS.map(s => s.peer === localHost ? { ...s, peer: undefined } : s)
-        : [...MOCK_SESSIONS]
-      sidebarState.setMockProjects(MOCK_PROJECTS)
-      setSessions(sessions)
-      setConnState('connected')
-
-      // Drive the "active" dot for sessions flagged mockActive by pinging
-      // the activity tracker just under its 3s fade interval.
-      const activeIds = MOCK_SESSIONS.filter(s => s.mockActive).map(s => s.id)
-      activeIds.forEach(id => handleActivity(id))
-      const tick = setInterval(() => activeIds.forEach(id => handleActivity(id)), 2000)
-      return () => clearInterval(tick)
-    } else {
-      sidebarState.fetchProjects()
-      fetchSessions().then(list => {
-        setSessions(list)
-        setConnState('connected')
-      }).catch(err => {
-        console.error('Failed to fetch sessions:', err)
-        setConnState('error')
-      })
-
-      // Subscribe to SSE for live updates
-      const source = new EventSource('/v1/events')
-      let sseConnected = false
-      source.addEventListener('open', () => {
-        if (sseConnected) {
-          // Reconnected after a drop - do a full refresh to catch missed events
-          sidebarState.fetchProjects()
-          fetchSessions().then(list => setSessions(list)).catch(() => {})
-        }
-        sseConnected = true
-      })
-      source.addEventListener('session-upsert', (e) => {
-        try {
-          const envelope = JSON.parse(e.data)
-          const session = envelope.session ?? envelope
-          const updated = toUISession(session)
-          let isNew = false
-          setSessions(prev => {
-            const idx = prev.findIndex(s => s.id === updated.id)
-            if (idx >= 0) {
-              const next = [...prev]
-              next[idx] = updated
-              return next
-            }
-            isNew = true
-            return [...prev, updated]
-          })
-          // Auto-select newly launched sessions
-          if (isNew && consumePendingLaunch()) {
-            const project = matchSession(updated, sidebarState.configured)
-            if (project) loc.route(sessionPath(project.slug, updated), true)
-          }
-        } catch (err) {
-          console.warn('session-upsert: bad event', err)
-        }
-      })
-      source.addEventListener('session-remove', (e) => {
-        try {
-          const { id } = JSON.parse(e.data)
-          setSessions(prev => prev.filter(s => s.id !== id))
-        } catch (err) {
-          console.warn('session-remove: bad event', err)
-        }
-      })
-      source.addEventListener('session-activity', (e) => {
-        try {
-          const { id } = JSON.parse(e.data)
-          if (id) handleActivity(id)
-        } catch {}
-      })
-      source.addEventListener('projects-update', () => {
-        sidebarState.handleProjectsUpdate()
-      })
-      source.addEventListener('peer-status', () => {
-        // Peer connection state changed. Re-fetch to get updated status.
-        fetchPeers().then(setPeers).catch(() => {})
-        // Invalidate launcher config cache so next open picks up new peer launchers.
-        invalidateConfigCache()
-      })
-      return () => source.close()
-    }
-  }, [])
 
   // URL param filtering: ?project=name or ?cwd=/path
   const filteredSessions = useMemo(() => {
@@ -901,8 +729,15 @@ function App() {
   // rewrites `/:project` → `/:project/:kind/:slug` when the URL resolved
   // to a specific session, and falls back to the project hub (or home)
   // when the session we were viewing disappeared.
+  //
+  // Guard: don't normalize until sessions have loaded at least once.
+  // Without this, projects may load first (setting configured.length > 0),
+  // causing the view memo to resolve a session URL to a project fallback
+  // (no matching sessions yet), which overwrites the URL before the real
+  // session data arrives.
   useEffect(() => {
     if (view === null) return
+    if (!sessionsLoaded) return
     const url = viewToPath(view, sidebarState.configured, sessions)
     if (url && url !== loc.path) loc.route(url, true)
   }, [view, sessions, sidebarVersion, loc.path])
@@ -933,27 +768,24 @@ function App() {
     dismissSession(session.id)
   }, [])
 
-  const handleSelect = useCallback((id: string) => {
-    const sess = sessions.find(s => s.id === id)
-    if (!sess) return
-    if (sess.resumable) {
-      // Resume: show spinner, send request, wait for SSE to make it alive.
-      setResumingId(id)
-      resumeSession(id).catch(err => {
-        console.error('resume failed:', err)
-        setResumingId(prev => prev === id ? null : prev)
-      })
-      return
-    }
-    setResumingId(null) // cancel any pending resume auto-select
-    const project = matchSession(sess, sidebarState.configured)
-    if (project) loc.route(sessionPath(project.slug, sess))
+  // Resume a sleeping session. Navigation happens automatically via the
+  // auto-select effect once the session comes alive.
+  const handleResume = useCallback((id: string) => {
+    setResumingId(id)
+    resumeSession(id).catch(err => {
+      console.error('resume failed:', err)
+      setResumingId(prev => prev === id ? null : prev)
+    })
+  }, [])
+
+  // Clear modifier state and focus the terminal when the selected session changes.
+  useEffect(() => {
+    if (!selectedId) return
+    setResumingId(null)
     setCtrlArmed(false)
     setAltArmed(false)
-    // Focus the terminal so the user can type immediately.
-    // requestAnimationFrame lets React flush the state update first.
     requestAnimationFrame(() => terminalFocusRef.current?.())
-  }, [sessions, loc, sidebarVersion])
+  }, [selectedId])
 
   // When a resumed session comes alive, select it.
   useEffect(() => {
@@ -1133,9 +965,7 @@ function App() {
         resumingId={resumingId}
         isSessionActive={isSessionActive}
         isSessionFading={isSessionFading}
-        onSelect={handleSelect}
-        onSelectProject={(slug) => loc.route(`/${slug}`)}
-        onGoHome={() => loc.route('/')}
+        onResume={handleResume}
         onCloseSession={handleCloseSession}
         onManageProjects={() => { setSidebarOpen(false); setManageProjectsOpen(true) }}
         open={sidebarOpen}
@@ -1180,7 +1010,7 @@ function App() {
             sessions={sessions}
             projects={sidebarState.configured}
             peers={peers}
-            onSelectSession={handleSelect}
+            onResume={handleResume}
             onCloseSession={handleCloseSession}
           />
         ) : selected && (canAttach || USE_MOCK) && terminalOptions && keybinds ? (
