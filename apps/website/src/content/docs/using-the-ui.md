@@ -11,7 +11,26 @@ The left panel lists your sessions grouped into projects.
 
 ### Logo
 
-Click the **gmux** logo at the top of the sidebar to return to the home screen, which shows your connected hosts, project overview, and quick-launch buttons.
+Click the **gmux** logo at the top of the sidebar to return to the home screen.
+
+## Home screen
+
+The home screen shows your hosts, projects, and quick-launch buttons.
+
+### Host cards
+
+Each machine (local and remote) gets a card with a status indicator, session count, and launch buttons.
+
+| Indicator | Meaning |
+|-----------|---------||
+| **Green dot** | Connected, sessions visible |
+| **Pulsing dot** | Connecting to peer |
+| **Red ✗** | Peer disconnected (shows error reason) |
+| **Dimmed card** | Offline: a tailnet device that looks like a gmux instance but is currently unreachable |
+
+Offline cards appear for tailnet devices whose hostname matches the configured tsnet prefix (e.g. `gmux-dev`). They're informational only: no launch buttons, no session count. Once the device comes online and is confirmed as gmux, it becomes a full peer and persists across restarts.
+
+Connected peers show launch buttons for each configured adapter, just like the local host.
 
 ### Projects
 

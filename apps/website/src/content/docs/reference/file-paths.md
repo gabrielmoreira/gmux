@@ -25,6 +25,8 @@ Created by gmuxd. Lives under `~/.local/state/gmux` (or `$XDG_STATE_HOME/gmux`).
 |------|---------|
 | `~/.local/state/gmux/gmuxd.sock` | Daemon Unix socket (local IPC between gmux CLI and gmuxd) |
 | `~/.local/state/gmux/auth-token` | Bearer token for TCP authentication |
+| `~/.local/state/gmux/gmuxd.log` | Daemon log (when started via `gmuxd start`) |
+| `~/.local/state/gmux/tailscale-discovery.json` | Cache of probed tailnet devices (auto-discovery) |
 | `~/.local/state/gmux/tsnet/` | Tailscale state directory (when remote access is enabled) |
 
 ## Session sockets
@@ -47,4 +49,4 @@ Override the directory with `GMUX_SOCKET_DIR`.
 
 | Path | Purpose |
 |------|---------|
-| `/tmp/gmuxd.log` | gmuxd stderr when auto-started by the `gmux` CLI |
+| `~/.local/state/gmux/gmuxd.log` | Daemon log when started via `gmuxd start` or auto-started by `gmux` |

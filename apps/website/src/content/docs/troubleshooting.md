@@ -10,7 +10,7 @@ description: Common problems and how to fix them.
 **Check the log:**
 
 ```bash
-cat /tmp/gmuxd.log
+cat ~/.local/state/gmux/gmuxd.log
 ```
 
 Common causes:

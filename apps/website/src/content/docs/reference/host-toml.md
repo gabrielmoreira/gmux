@@ -25,6 +25,7 @@ allow = []               # additional login names (owner is auto-whitelisted)
 
 # Auto-discover peers. All flags default to true.
 [discovery]
+tailscale = true         # discover other gmux instances on the tailnet
 devcontainers = true     # subscribe to Docker events, register gmux containers
 
 # Manual peers (remote gmuxd instances to aggregate sessions from).
@@ -54,6 +55,7 @@ token_file = "~/.config/gmux/tokens/server"
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
+| `tailscale` | `boolean` | `true` | Discover other gmux instances on the tailnet via `WatchIPNBus`. Only active when `tailscale.enabled` is also true. |
 | `devcontainers` | `boolean` | `true` | Subscribe to Docker events and register any container with the gmux devcontainer feature as a peer. Skipped if the Docker CLI is not installed. |
 
 ### `[[peers]]` (array of tables)

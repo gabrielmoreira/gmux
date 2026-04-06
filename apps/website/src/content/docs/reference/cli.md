@@ -54,7 +54,7 @@ Stop the running daemon via the Unix socket.
 Show daemon health, session counts, and peer status.
 
 ```
-gmuxd 0.4.0 (ready)
+gmuxd 1.0.0 (ready)
   tcp:    127.0.0.1:8790
   socket: /home/user/.local/state/gmux/gmuxd.sock
   remote: https://gmux.tailnet.ts.net
@@ -63,9 +63,11 @@ Sessions: 3 alive (2 local, 1 remote), 12 dead (15 total)
 
 Peers:
   • desktop (1 session)
-    https://gmux-1.tailnet.ts.net
-  ✗ server (connection refused)
-    https://server.tailnet.ts.net
+    https://gmux-desktop.tailnet.ts.net
+  ○ gmux-server (offline)
+    https://gmux-server.tailnet.ts.net
+  ✗ manual-peer (connection refused)
+    https://peer.example.com
 ```
 
 ### `gmuxd auth`

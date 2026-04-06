@@ -27,6 +27,7 @@ One per machine. It:
 - Serves the REST API, SSE event stream, and WebSocket proxy
 - Serves the embedded web frontend as a SPA
 - Manages session launch, kill, dismiss, and resume
+- Optionally connects to other gmuxd instances (peers) and aggregates their sessions into a single UI (see [Multi-Machine](/multi-machine/))
 
 `gmuxd` is stateless — if it restarts, it rediscovers running sessions. On startup it hashes the `gmux` binary it ships with; sessions running a different build are marked **stale** so the UI can flag them.
 
@@ -87,6 +88,7 @@ Served by `gmuxd` on a Unix socket (local IPC) and a TCP listener (default `127.
 | `POST /v1/sessions/{id}/resume` | Resume a resumable session |
 | `GET /v1/events` | SSE stream of session and project changes |
 | `GET /v1/health` | Daemon health check |
+| `GET /v1/peers` | Connected and offline peer status |
 | `WS /ws/{id}` | Terminal WebSocket proxy |
 | `GET /` | Embedded web UI (SPA) |
 

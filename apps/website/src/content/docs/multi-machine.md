@@ -20,7 +20,7 @@ Spokes need zero configuration changes. The hub authenticates with each spoke's 
 
 When [Tailscale](/remote-access) is enabled, gmuxd automatically discovers other gmux instances on the same tailnet. No manual peer configuration is needed: install gmux on two machines, enable Tailscale on both, and they find each other.
 
-gmuxd periodically queries the tailnet for online devices, probes each with a `/v1/health` request to identify gmux instances, and subscribes to their event streams. Results are cached so known devices are never re-probed.
+gmuxd subscribes to tailnet changes via Tailscale's `WatchIPNBus` API and reacts immediately when devices come online. Each new device is probed with a `/v1/health` request to confirm it's running gmux, then added as a peer. Results are cached so known devices are re-registered instantly on restart without re-probing.
 
 Authentication is handled by Tailscale identity. The tailscale listener uses `WhoIs` to verify the connecting peer belongs to the same user. No bearer tokens are exchanged.
 
