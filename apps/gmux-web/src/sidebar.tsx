@@ -144,16 +144,16 @@ function FolderGroup({
   const isCurrent = currentProjectSlug === folder.path
   return (
     <div class="folder">
-      <div class="folder-header">
+      <div class={`folder-header${isCurrent ? ' current' : ''}`}>
         <a
-          class={`folder-name${isCurrent ? ' current' : ''}`}
+          class="folder-name"
           href={`/${folder.path}`}
           title={`Open ${folder.name} hub`}
           onClick={onClick}
         >
           {folder.name}
         </a>
-        <LaunchButton cwd={folder.sessions[0]?.cwd ?? folder.launchCwd} storageKey={folder.path} className="folder-launch-btn" />
+        <LaunchButton sessions={visible} selectedId={selectedId} fallbackCwd={folder.launchCwd} className="folder-launch-btn" />
       </div>
       <div class="folder-sessions">
         {visible.map(s => (
@@ -214,29 +214,8 @@ export function Sidebar({
     <>
       <div class={`sidebar-overlay ${open ? 'visible' : ''}`} onClick={onClose} />
       <aside class={`sidebar ${open ? 'open' : ''}`}>
-        <div class="sidebar-header">
-          <a
-            class="sidebar-logo"
-            href="/"
-            onClick={onClose}
-          >gmux</a>
-          {health?.version ? (
-            <a
-              class={`sidebar-badge${health.update_available ? ' sidebar-badge-update' : ''}`}
-              href="https://gmux.app/changelog/"
-              target="_blank"
-              title={health.update_available
-                ? 'Update available - safe to update while sessions are running'
-                : `gmux ${health.version}`}
-            >
-              {health.update_available
-                ? <>{health.version} &rarr; {health.update_available}</>
-                : health.version}
-            </a>
-          ) : null}
-          <LaunchButton className="sidebar-launch-btn" onLaunch={onClose} />
-        </div>
         <div class="sidebar-scroll">
+          <div class="sidebar-spacer" />
           {hasProjects ? folders.map(f => (
             <FolderGroup
               key={f.path}
@@ -279,6 +258,28 @@ export function Sidebar({
               <IconBell muted /> Notifications blocked in browser settings
             </div>
           )}
+          <div class="sidebar-header">
+            <a
+              class="sidebar-logo"
+              href="/"
+              onClick={onClose}
+            >gmux</a>
+            {health?.version ? (
+              <a
+                class={`sidebar-badge${health.update_available ? ' sidebar-badge-update' : ''}`}
+                href="https://gmux.app/changelog/"
+                target="_blank"
+                title={health.update_available
+                  ? 'Update available - safe to update while sessions are running'
+                  : `gmux ${health.version}`}
+              >
+                {health.update_available
+                  ? <>{health.version} &rarr; {health.update_available}</>
+                  : health.version}
+              </a>
+            ) : null}
+            <LaunchButton className="sidebar-launch-btn" onLaunch={onClose} />
+          </div>
         </div>
       </aside>
     </>
