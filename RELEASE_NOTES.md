@@ -1,17 +1,42 @@
-- **Fixed dev instances unable to connect to their backend.** The `gmux` CLI
-  now reads `GMUXD_PORT` directly (same env var as `gmuxd`), so a single
-  export is sufficient for both binaries. The redundant `GMUXD_ADDR` env var
-  has been removed.
+- **Clickable links now work on mobile.** Tapping a URL in terminal output
+  previously failed to open it because the touch handler scrolled the viewport
+  before the browser could synthesize the mouse events that xterm.js uses for
+  link activation. The scroll is now deferred so links resolve at the correct
+  position. ([#44](https://github.com/gabrielmoreira/gmux/pull/44))
+- **Smarter project grouping.** Sessions are now grouped by shared VCS remote URLs instead of filesystem paths. Two clones of the same repo on different machines (or with different directory names) appear under one project heading. Fork workflows just work: if your fork's `origin` and the upstream repo share any remote URL, they group together. Falls back to workspace root and directory path for repos without remotes. ([#41](https://github.com/gabrielmoreira/gmux/pull/41))
+- ### Status indicators redesign
 
-- **Dev instances now isolate pi session storage.** The pi adapter respects
-  `PI_CODING_AGENT_DIR`, and the dev scripts export it to an instance-specific
-  directory. Sessions launched from a dev instance no longer appear in (or
-  pollute) your real pi session history. ([#39](https://github.com/gmuxapp/gmux/pull/39))
-- **Nested gmux detection.** Running `gmux <command>` inside an existing gmux
-  session no longer creates a PTY-within-PTY nest. Instead, the session is
-  launched in the background and appears in the gmux UI automatically. ([#37](https://github.com/gmuxapp/gmux/pull/37))
-- **User-configurable terminal settings.** Two new config files in `~/.config/gmux/` let you customize the terminal without rebuilding:
-  - `theme.jsonc`: colors, font, cursor style, scrollback, and more. Drop in a [Windows Terminal theme](https://github.com/mbadolato/iTerm2-Color-Schemes/tree/master/windowsterminal) and it works out of the box.
-  - `keybinds.jsonc`: remap keys the browser steals (Ctrl+T, Ctrl+N, Ctrl+W) to PTY sequences via `sendKeys`, send raw text with `sendText`, or disable built-in bindings with `"none"`. A virtual `secondary` modifier resolves to Cmd on macOS and Ctrl elsewhere for cross-platform keybinds.
-- **Platform-aware default keybinds.** On Linux, Ctrl+Alt+T/N/W send Ctrl+T/N/W (workaround for browser-stolen shortcuts). On Mac, Cmd+Left/Right send Home/End, Cmd+Backspace deletes to start of line, and Cmd+K clears the screen, matching iTerm2 conventions.
-- **No restart required.** Config files are read from disk on each page load, so edit and refresh. ([#35](https://github.com/gmuxapp/gmux/pull/35))
+- **Unread indicator is now blue.** The sidebar dot for sessions with unread
+  content changed from amber to blue, making it more visible against dark
+  backgrounds.
+- **Working indicator is now a hollow ring.** Sessions where an agent is
+  actively processing show a pulsating ring outline instead of a filled dot,
+  reducing visual noise while remaining recognizable.
+- **Transient activity indicator for terminals.** Shell sessions that produce
+  output briefly show a muted ring that fades after a few seconds, rather than
+  permanently marking as unread. Agent sessions (pi, Claude, Codex) only
+  trigger unread when the assistant completes a turn.
+- **Arrival animation on all unread transitions.** The grow-pulse animation
+  now fires whenever a session becomes unread (previously only on
+  working-to-unread transitions). The mobile hamburger badge re-animates
+  when additional sessions become unread. ([#46](https://github.com/gabrielmoreira/gmux/pull/46))
+- ### Security
+
+- **Fixed unauthenticated localhost listener.** The TCP listener on `localhost:8790` previously required no authentication, which was exploitable via VS Code port forwarding, `docker -p`, and SSH tunnels. All TCP connections now require a bearer token. ([#40](https://github.com/gmuxapp/gmux/pull/40))
+
+### Architecture
+
+- **Unix socket for local IPC.** The `gmux` CLI and `gmuxd` now communicate via a Unix socket (`~/.local/state/gmux/gmuxd.sock`) instead of an unauthenticated TCP connection. Unix sockets cannot be forwarded by VS Code, Docker, or SSH. File permissions (0600/0700) enforce locality.
+- **Single authenticated TCP listener.** The TCP listener (default `127.0.0.1:8790`) serves the web UI and API with bearer token authentication on every request. The bind address is controlled by the `GMUXD_LISTEN` env var for container use.
+
+### CLI changes
+
+- `gmuxd` (no args) or `gmuxd start` starts the daemon, always replacing any existing instance.
+- `gmuxd stop` replaces `gmuxd shutdown`.
+- `gmuxd status` shows daemon health, listen address, and socket path.
+- `gmuxd auth` replaces `gmuxd auth-link`, prints the token and a ready-to-use URL.
+
+### Config simplification
+
+- Removed the `[network]` config section and `listen` field. Bind address is now `GMUXD_LISTEN` env var only.
+- Removed `GMUXD_PORT`, `GMUXD_ADDR`, and `GMUXD_SOCKET` environment variables. ([#43](https://github.com/gabrielmoreira/gmux/pull/43))
