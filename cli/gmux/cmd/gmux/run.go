@@ -73,12 +73,46 @@ func runSession(args []string, attach bool) {
 		log.Fatalf("cannot determine cwd: %v", err)
 	}
 
-	sessionID := naming.SessionID()
+	// Honour GMUX_RESUME_ID when the daemon passed one in (resume,
+	// restart). The runner uses the daemon-supplied id so the
+	// session keeps its identity across the seam, including its
+	// scrollback directory on disk. See ADR 0003.
+	//
+	// GMUX_RESUME_ID is intentionally distinct from GMUX_SESSION_ID:
+	// the runner sets the latter for its child process (consumed by
+	// adapters / hooks), so a nested `gmux foo` inside an
+	// interactive gmux session inherits GMUX_SESSION_ID from the
+	// parent and would otherwise try to re-bind the parent's id.
+	// The dedicated GMUX_RESUME_ID is only ever set by the daemon
+	// and not propagated to descendants, so the nested case falls
+	// through to a fresh id without depending on the bind-collision
+	// fallback as a safety net.
+	sessionID := os.Getenv("GMUX_RESUME_ID")
+	if sessionID == "" {
+		sessionID = naming.SessionID()
+	}
 	socketDir := os.Getenv("GMUX_SOCKET_DIR")
 	if socketDir == "" {
 		socketDir = "/tmp/gmux-sessions"
 	}
 	sockPath := filepath.Join(socketDir, sessionID+".sock")
+
+	// Bind the socket BEFORE any sessionID-dependent setup
+	// (scrollback path, env, state). On collision with a live
+	// runner — which typically only happens when a daemon-supplied
+	// GMUX_RESUME_ID lands in a window where the targeted session
+	// is actually still alive — fall back to a fresh id and bind
+	// that instead. See ADR 0003 "Collision handling".
+	listener, err := ptyserver.BindSocket(sockPath)
+	if errors.Is(err, ptyserver.ErrSocketInUse) {
+		log.Printf("gmux: requested session id %s is in use; falling back to a fresh id", sessionID)
+		sessionID = naming.SessionID()
+		sockPath = filepath.Join(socketDir, sessionID+".sock")
+		listener, err = ptyserver.BindSocket(sockPath)
+	}
+	if err != nil {
+		log.Fatalf("failed to bind session socket: %v", err)
+	}
 
 	// Resolve adapter — registered adapters first, shell fallback
 	registry := adapter.NewRegistry()
@@ -139,6 +173,7 @@ func runSession(args []string, attach bool) {
 		Command:    args,
 		Cwd:        workDir,
 		Env:        env,
+		Listener:   listener,
 		SocketPath: sockPath,
 		Adapter:    a,
 		State:      state,
@@ -196,7 +231,8 @@ func runSession(args []string, attach bool) {
 		fmt.Printf("command:  %s\n", strings.Join(args, " "))
 	}
 
-	// Start PTY server. Reuses the outer `err` declared by os.Getwd above.
+	// Start PTY server. The socket is already bound to `listener`
+	// (above); ptyserver.New takes ownership and serves on it.
 	srv, err = ptyserver.New(ptyCfg)
 	if err != nil {
 		if localTty != nil {

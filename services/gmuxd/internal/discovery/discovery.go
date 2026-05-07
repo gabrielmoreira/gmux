@@ -53,9 +53,9 @@ type OnDeadFunc func(sess store.Session)
 // This is the right point to invoke work that depends on live sessions
 // being registered with the FileMonitor (e.g. applying persisted
 // attributions to freshly-rehydrated runners).
-func Watch(sessions *store.Store, subs *Subscriptions, fileMon *FileMonitor, resumes *PendingResumes, onDead OnDeadFunc, onFirstScan func(), interval time.Duration, stop <-chan struct{}) {
+func Watch(sessions *store.Store, subs *Subscriptions, fileMon *FileMonitor, onDead OnDeadFunc, onFirstScan func(), interval time.Duration, stop <-chan struct{}) {
 	// Initial scan immediately
-	Scan(sessions, subs, fileMon, resumes, onDead)
+	Scan(sessions, subs, fileMon, onDead)
 	if onFirstScan != nil {
 		onFirstScan()
 	}
@@ -69,7 +69,7 @@ func Watch(sessions *store.Store, subs *Subscriptions, fileMon *FileMonitor, res
 			subs.UnsubscribeAll()
 			return
 		case <-ticker.C:
-			Scan(sessions, subs, fileMon, resumes, onDead)
+			Scan(sessions, subs, fileMon, onDead)
 		}
 	}
 }
@@ -77,7 +77,7 @@ func Watch(sessions *store.Store, subs *Subscriptions, fileMon *FileMonitor, res
 // Scan finds all .sock files and queries each runner's /meta endpoint.
 // Reachable sockets → upsert session + subscribe to /events.
 // Unreachable → remove + cleanup + unsubscribe.
-func Scan(sessions *store.Store, subs *Subscriptions, fileMon *FileMonitor, resumes *PendingResumes, onDead OnDeadFunc) {
+func Scan(sessions *store.Store, subs *Subscriptions, fileMon *FileMonitor, onDead OnDeadFunc) {
 	dir := socketDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -105,7 +105,7 @@ func Scan(sessions *store.Store, subs *Subscriptions, fileMon *FileMonitor, resu
 		if trackedSockets[sockPath] {
 			continue // already tracked
 		}
-		if err := Register(sessions, subs, fileMon, sockPath, resumes, onDead, nil); err != nil {
+		if err := Register(sessions, subs, fileMon, sockPath, onDead); err != nil {
 			// Only remove sockets old enough to be genuinely stale.
 			// A brand-new socket may not be listening yet (runner still starting).
 			if info, serr := entry.Info(); serr == nil && time.Since(info.ModTime()) > 10*time.Second {
@@ -114,17 +114,33 @@ func Scan(sessions *store.Store, subs *Subscriptions, fileMon *FileMonitor, resu
 		}
 	}
 
-	// Phase 2: detect dead sessions (socket file gone or unresponsive).
+	// Phase 2: detect dead sessions whose runner is no longer reachable.
+	//
+	// The active /events subscription is the primary liveness signal:
+	// while we hold an SSE stream from the runner, the runner is by
+	// definition still talking to us, regardless of what the socket
+	// path looks like in the filesystem. Notably, ptyserver.handleKill
+	// unlinks the socket path before the runner has finished its
+	// shutdown (so a replacement runner can BindSocket without racing
+	// the dying listener; see ADR 0003); during that window the path
+	// is gone but the SSE subscription is still streaming the runner's
+	// final exit event. Treating the missing path as a death signal
+	// would race ahead of the exit event and call NotifySessionDied,
+	// dropping the file→session attribution that resume / restart
+	// expects to keep across the seam.
+	//
+	// Only when the subscription itself has dropped do we fall back to
+	// stat / probe to distinguish a stale path from a live runner whose
+	// SSE blip we'll reconnect to.
 	for _, s := range sessions.List() {
 		if !s.Alive || s.SocketPath == "" {
 			continue
 		}
-		if _, err := os.Stat(s.SocketPath); err != nil {
-			// Socket file is gone — definitely dead.
-		} else if subs.IsActive(s.ID) {
-			continue // socket exists and subscription is live — healthy
-		} else if probeSocket(s.SocketPath) {
-			continue // socket exists and responds — subscription will reconnect
+		if subs.IsActive(s.ID) {
+			continue // subscription live — trust the SSE for the eventual exit
+		}
+		if _, err := os.Stat(s.SocketPath); err == nil && probeSocket(s.SocketPath) {
+			continue // path exists and responds — subscription will reconnect
 		}
 		// Socket gone or unresponsive — mark dead.
 		s.Alive = false
@@ -159,68 +175,65 @@ func probeSocket(socketPath string) bool {
 	return true
 }
 
-// OnResumeMergedFunc fires when Register absorbs a fresh registration
-// into an existing dead session record (the pendingResume path).
-// gmuxd uses it to drop the persisted meta.json now that the session
-// is alive again. nil is allowed.
-type OnResumeMergedFunc func(existingID string)
-
 // Register handles a registration request from gmux-run.
-// Immediately queries the runner's /meta, adds to store, and subscribes to /events.
-// If there's a pending resume matching this session's cwd+kind, the existing
-// store entry is updated in-place rather than creating a new one;
-// onResumeMerged then fires with the existing session's id.
+// Immediately queries the runner's /meta, adds to store, and
+// subscribes to /events.
 //
-// Fast-exiting commands (echo, true) often die before queryMeta arrives,
-// so the /meta payload reports alive=false. In that case Register is the
-// session's only landing point in the store, and onDead fires after the
-// Upsert so the record is persisted to disk.
-func Register(sessions *store.Store, subs *Subscriptions, fileMon *FileMonitor, socketPath string, resumes *PendingResumes, onDead OnDeadFunc, onResumeMerged OnResumeMergedFunc) error {
+// Two paths, distinguished by whether the runner-reported id is
+// already known to the store:
+//
+//   - **Re-registration** (id already in store). Resume — where the
+//     daemon passed GMUX_RESUME_ID to the runner per ADR 0003 — and
+//     daemon-restart-with-surviving-runner both land here. The
+//     existing record is mutated in place: runtime fields (alive,
+//     pid, socket, status, started/exit times, binary hash, runner
+//     version, command, terminal size) take their values from the
+//     fresh /meta payload, while everything else — slug,
+//     created_at, attribution-derived adapter title and subtitle,
+//     workspace root, remotes — carries across the seam. The
+//     adapter's OnRegister hook is intentionally skipped: its
+//     primary job is slug derivation, and the authoritative slug
+//     for this session was decided at original registration.
+//
+//   - **Fresh** (id not in store). Normal new-session launch. The
+//     adapter's OnRegister runs to write any per-session state file
+//     and to derive the initial slug.
+//
+// Fast-exiting commands (echo, true) often die before queryMeta
+// arrives, so the /meta payload reports alive=false. In that case
+// Register is the session's only landing point in the store, and
+// onDead fires after the Upsert so the record is persisted to disk.
+func Register(sessions *store.Store, subs *Subscriptions, fileMon *FileMonitor, socketPath string, onDead OnDeadFunc) error {
 	newSess, err := queryMeta(socketPath)
 	if err != nil {
 		return err
 	}
 
-	// Check if this is a resumed session.
-	if resumes != nil {
-		if existingID, ok := resumes.Take(newSess.Command); ok {
-			if existing, ok := sessions.Get(existingID); ok {
-				// Merge: keep the existing entry's ID and slug,
-				// update with live session data.
-				existing.Alive = true
-				existing.SocketPath = socketPath
-				existing.Pid = newSess.Pid
-				existing.StartedAt = newSess.StartedAt
-				existing.Status = newSess.Status
-				existing.BinaryHash = newSess.BinaryHash
-				existing.RunnerVersion = newSess.RunnerVersion
-				sessions.Upsert(existing)
-				if subs != nil {
-					subs.Subscribe(existingID, socketPath)
-				}
-				if fileMon != nil {
-					fileMon.NotifyNewSession(existingID)
-				}
-				// Clean up any duplicate the discovery Watch loop may have
-				// created between socket creation and this Register() call.
-				if newSess.ID != existingID {
-					sessions.Remove(newSess.ID)
-					if subs != nil {
-						subs.Unsubscribe(newSess.ID)
-					}
-				}
-				if onResumeMerged != nil {
-					onResumeMerged(existingID)
-				}
-				log.Printf("register: merged resumed session %s ← %s", existingID, newSess.ID)
-				return nil
-			}
-		}
-	}
-
-	// Let the adapter perform any registration work (e.g. writing a
-	// state file for restart recovery) and provide initial metadata.
-	if a := adapters.FindByKind(newSess.Kind); a != nil {
+	if existing, ok := sessions.Get(newSess.ID); ok {
+		// Re-registration. The runner reports fresh runtime state;
+		// the store has the historical and attribution-derived
+		// state from before the seam. Merge by overwriting only the
+		// runtime-owned fields so anything the runner doesn't know
+		// about (slug, created_at, FileMonitor-attributed title /
+		// subtitle, workspace metadata) survives.
+		existing.Alive = newSess.Alive
+		existing.Pid = newSess.Pid
+		existing.SocketPath = socketPath
+		existing.StartedAt = newSess.StartedAt
+		existing.ExitedAt = newSess.ExitedAt
+		existing.ExitCode = newSess.ExitCode
+		existing.Status = newSess.Status
+		existing.BinaryHash = newSess.BinaryHash
+		existing.RunnerVersion = newSess.RunnerVersion
+		existing.Command = newSess.Command
+		existing.TerminalCols = newSess.TerminalCols
+		existing.TerminalRows = newSess.TerminalRows
+		// Resumable is a derived attribute of dead sessions; a
+		// re-registration means alive, so always clear.
+		existing.Resumable = false
+		*newSess = existing
+		log.Printf("register: re-registered %s session %s (slug=%s)", newSess.Kind, newSess.ID, newSess.Slug)
+	} else if a := adapters.FindByKind(newSess.Kind); a != nil {
 		if reg, ok := a.(adapter.SessionRegistrar); ok {
 			info, err := reg.OnRegister(newSess.ID, newSess.Cwd, newSess.Command)
 			if err != nil {

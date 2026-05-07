@@ -5,6 +5,7 @@ package ptyserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -31,6 +32,56 @@ import (
 // maxScrollback is the number of lines kept in the virtual terminal's
 // scrollback buffer. Lines older than this are discarded.
 const maxScrollback = 2000
+
+// ErrSocketInUse is returned by BindSocket when the requested socket
+// path is already owned by a live listener (a probe at that path got
+// a response). Callers that received this error from New should pick
+// a different session id and retry. See ADR 0003 "Collision
+// handling".
+var ErrSocketInUse = errors.New("socket path already in use by a live runner")
+
+// BindSocket creates and listens on a Unix socket at sockPath. The
+// parent directory is created with mode 0o700 if missing, and the
+// socket file itself is owner-only via umask 0o077.
+//
+// It distinguishes a stale leftover socket file from a live owner:
+//
+//   - If a live owner answers a probe connection, returns
+//     ErrSocketInUse without touching the file. The caller should
+//     pick a different path.
+//   - Otherwise, removes any stale file and listens.
+//
+// The TOCTOU window between the probe and the listen is harmless in
+// practice: only gmux runners write to socketDir, and a runner that
+// could win the race would itself be subject to this same probe on
+// its next bind attempt.
+func BindSocket(sockPath string) (net.Listener, error) {
+	if probeSocket(sockPath) {
+		return nil, ErrSocketInUse
+	}
+	if err := os.MkdirAll(filepath.Dir(sockPath), 0o700); err != nil {
+		return nil, fmt.Errorf("BindSocket: mkdir %s: %w", filepath.Dir(sockPath), err)
+	}
+	_ = os.Remove(sockPath)
+	oldUmask := syscall.Umask(0o077)
+	defer syscall.Umask(oldUmask)
+	return net.Listen("unix", sockPath)
+}
+
+// probeSocket returns true if a Unix socket at sockPath accepts
+// connections within a short timeout. Used to distinguish stale
+// socket files from live runners.
+func probeSocket(sockPath string) bool {
+	if _, err := os.Stat(sockPath); err != nil {
+		return false
+	}
+	conn, err := net.DialTimeout("unix", sockPath, 250*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
 
 func newScreen(cols, rows int, cursorCb func(visible bool)) *vt.Emulator {
 	// Default to 80x24 when launched non-interactively (no terminal).
@@ -139,9 +190,16 @@ func (c *wsClient) write(typ websocket.MessageType, data []byte) error {
 
 // Config for creating a new PTY server.
 type Config struct {
-	Command    []string
-	Cwd        string
-	Env        []string
+	Command []string
+	Cwd     string
+	Env     []string
+	// Listener is the pre-bound Unix socket the server serves
+	// HTTP/WebSocket on. Required. Callers obtain one via
+	// BindSocket so they can react to ErrSocketInUse (e.g.,
+	// regenerate the session id) before any sessionID-dependent
+	// setup runs. The server takes ownership: Close is called on
+	// shutdown.
+	Listener   net.Listener
 	SocketPath string
 	Cols       uint16
 	Rows       uint16
@@ -149,7 +207,7 @@ type Config struct {
 	State      *session.State
 	// Version is reported to children via TERM_PROGRAM_VERSION.
 	// Defaults to "dev" when empty.
-	Version    string
+	Version string
 	// LocalOut, if non-nil, receives a copy of every PTY output chunk
 	// from the moment the server starts reading. Set this at construction
 	// time (rather than calling SetLocalOutput after New) when you need
@@ -177,6 +235,11 @@ func New(cfg Config) (*Server, error) {
 		cfg.Rows = 25
 	}
 
+	if cfg.Listener == nil {
+		return nil, fmt.Errorf("ptyserver.New: cfg.Listener is required (use BindSocket)")
+	}
+	listener := cfg.Listener
+
 	cmd := exec.Command(cfg.Command[0], cfg.Command[1:]...)
 	cmd.Dir = cfg.Cwd
 	cmd.Env = buildChildEnv(os.Environ(), cfg.Env, cfg.Version)
@@ -187,21 +250,9 @@ func New(cfg Config) (*Server, error) {
 		Rows: cfg.Rows,
 	})
 	if err != nil {
+		listener.Close()
+		os.Remove(cfg.SocketPath)
 		return nil, fmt.Errorf("start pty: %w", err)
-	}
-
-	// Ensure socket dir exists (owner-only) and remove stale socket.
-	os.MkdirAll(filepath.Dir(cfg.SocketPath), 0o700)
-	os.Remove(cfg.SocketPath)
-
-	// Set umask so the socket file itself is owner-only (0700).
-	oldUmask := syscall.Umask(0o077)
-	listener, err := net.Listen("unix", cfg.SocketPath)
-	syscall.Umask(oldUmask)
-	if err != nil {
-		ptmx.Close()
-		cmd.Process.Kill()
-		return nil, fmt.Errorf("listen unix: %w", err)
 	}
 
 	s := &Server{
@@ -576,15 +627,32 @@ func (s *Server) handleKill(w http.ResponseWriter, r *http.Request) {
 
 	// Block until the child actually exits (or escalate). Dismiss/restart
 	// callers rely on this: once /kill returns, gmuxd immediately removes
-	// the session and expects the runner's socket to disappear shortly
-	// after. Returning early while a shell (e.g. fish) ignores SIGHUP
-	// causes the next discovery scan to re-register the dead session.
+	// the session and expects the runner's socket path to be free.
+	// Returning early while a shell (e.g. fish) ignores SIGHUP causes
+	// the next discovery scan to re-register the dead session.
 	select {
 	case <-s.done:
 	case <-time.After(2 * time.Second):
 		syscall.Kill(-pid, syscall.SIGKILL)
 		log.Printf("ptyserver: escalated to SIGKILL for child pid %d", pid)
 		<-s.done
+	}
+
+	// Release the canonical socket path before responding. The runner
+	// process will linger briefly for state.SetExited / deregister /
+	// scrollback close, and its listener stays up on the inode for the
+	// existing SSE/WS connections that need to drain (notably the
+	// daemon's exit-event subscription). But the path is unreachable
+	// to new dialers, so a daemon launching a replacement runner under
+	// the same id (resume / restart, see ADR 0003) can BindSocket
+	// without racing against this runner's shutdown sequence.
+	//
+	// Idempotent: a later os.Remove on the missing path is harmless;
+	// any normal-exit code path that also tries to clean up the path
+	// (Server.Shutdown's signal-handler call, or the kernel on
+	// process exit) finds it already gone.
+	if err := os.Remove(s.sockPath); err != nil && !os.IsNotExist(err) {
+		log.Printf("ptyserver: kill: remove sockfile %s: %v", s.sockPath, err)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1029,7 +1097,19 @@ func buildChildEnv(parent, extra []string, version string) []string {
 		version = "dev"
 	}
 	env := make([]string, 0, len(parent)+len(extra)+5)
-	env = append(env, parent...)
+	for _, e := range parent {
+		// GMUX_RESUME_ID is a private daemon→runner directive (see
+		// ADR 0003). Inheriting it into PTY children would let a
+		// nested `gmux foo` invocation inside a session try to
+		// re-bind the parent runner's id; it'd survive on the
+		// collision fallback, but that's exactly the safety-net
+		// dependency the dedicated env var name was supposed to
+		// avoid. Strip on the way out.
+		if strings.HasPrefix(e, "GMUX_RESUME_ID=") {
+			continue
+		}
+		env = append(env, e)
+	}
 	env = append(env, extra...)
 	env = append(env,
 		"TERM_PROGRAM=gmux",
