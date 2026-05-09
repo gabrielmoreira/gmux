@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-var MetaDir = "/tmp/gmux-meta"
+var MetaDir = filepath.Join(os.TempDir(), "gmux-meta")
 
 type SessionMeta struct {
 	Version    int      `json:"version"`

@@ -1,6 +1,7 @@
 package ptyserver
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -31,6 +32,93 @@ func mustBindSocket(t *testing.T, sockPath string) net.Listener {
 		t.Fatalf("BindSocket %s: %v", sockPath, err)
 	}
 	return ln
+}
+
+const helperProcessEnv = "GMUX_PTY_HELPER_PROCESS"
+
+func helperCommand(mode string) []string {
+	binary, err := os.Executable()
+	if err != nil {
+		binary, err = filepath.Abs(os.Args[0])
+		if err != nil {
+			binary = os.Args[0]
+		}
+	}
+	return []string{binary, "-test.run=TestPTYHelperProcess$", "--", mode}
+}
+
+func readHelperLine(r *bufio.Reader) (string, error) {
+	var data []byte
+	for {
+		b, err := r.ReadByte()
+		if err != nil {
+			if len(data) > 0 {
+				return string(data), nil
+			}
+			return "", err
+		}
+		switch b {
+		case '\r':
+			if next, err := r.Peek(1); err == nil && len(next) == 1 && next[0] == '\n' {
+				_, _ = r.ReadByte()
+			}
+			return string(data), nil
+		case '\n':
+			return string(data), nil
+		default:
+			data = append(data, b)
+		}
+	}
+}
+
+func TestPTYHelperProcess(t *testing.T) {
+	mode := ""
+	for i, arg := range os.Args {
+		if arg == "--" && i+1 < len(os.Args) {
+			mode = os.Args[i+1]
+			break
+		}
+	}
+	if os.Getenv(helperProcessEnv) != "1" || mode == "" {
+		return
+	}
+
+	switch mode {
+	case "echo-stdin":
+		line, err := readHelperLine(bufio.NewReader(os.Stdin))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Printf("got:%s\n", line)
+		os.Exit(0)
+	case "wait-winch":
+		fmt.Println("ready")
+		line, err := readHelperLine(bufio.NewReader(os.Stdin))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		if line != "arm" {
+			fmt.Fprintf(os.Stderr, "unexpected helper command %q\n", line)
+			os.Exit(1)
+		}
+		signals := make(chan os.Signal, 1)
+		stopSignals := notifyResizeSignal(signals)
+		defer stopSignals()
+		fmt.Println("armed")
+		select {
+		case <-signals:
+			fmt.Println("WINCH_FIRED")
+			time.Sleep(100 * time.Millisecond)
+			os.Exit(0)
+		case <-time.After(10 * time.Second):
+			os.Exit(0)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "unknown helper mode %q\n", mode)
+		os.Exit(2)
+	}
 }
 
 func TestPTYServerBasicOutput(t *testing.T) {
@@ -680,16 +768,14 @@ func TestPTYServerSnapshotBeforeLiveData(t *testing.T) {
 func TestPTYServerResizeDedup(t *testing.T) {
 	sockPath := filepath.Join(t.TempDir(), "test.sock")
 
-	// The child uses a SIGWINCH trap that writes a marker to stdout.
-	// This lets us observe whether SIGWINCH was actually delivered.
+	// Use the Go helper process instead of `sh -c trap ...` because Ubuntu's
+	// `/bin/sh` is typically dash, which does not reliably trap SIGWINCH in
+	// non-interactive mode. The helper arms signal handling after startup so the
+	// test can observe only resize-triggered signals.
 	srv, err := New(Config{
-		Command: []string{"bash", "-c", `
-			trap 'echo WINCH_FIRED' SIGWINCH
-			echo ready
-			# Keep running so we can send resize messages.
-			while true; do sleep 0.1; done
-		`},
-		Cwd:        "/tmp",
+		Command:    helperCommand("wait-winch"),
+		Env:        []string{helperProcessEnv + "=1"},
+		Cwd:        t.TempDir(),
 		Listener:   mustBindSocket(t, sockPath),
 		SocketPath: sockPath,
 		Cols:       80,
@@ -732,7 +818,8 @@ func TestPTYServerResizeDedup(t *testing.T) {
 		}
 	}()
 
-	// Wait until we see "ready" in the output, confirming the trap is set.
+	// Wait until we see "ready" in the output, confirming the helper is ready
+	// to be armed over PTY stdin.
 	deadline := time.After(5 * time.Second)
 	for {
 		time.Sleep(50 * time.Millisecond)
@@ -746,6 +833,28 @@ func TestPTYServerResizeDedup(t *testing.T) {
 		case <-deadline:
 			mu.Lock()
 			t.Fatalf("child never became ready, got: %q", allOutput)
+			mu.Unlock()
+		default:
+		}
+	}
+
+	if err := conn.Write(ctx, websocket.MessageBinary, []byte("arm\n")); err != nil {
+		t.Fatalf("arm helper: %v", err)
+	}
+
+	deadline = time.After(5 * time.Second)
+	for {
+		time.Sleep(50 * time.Millisecond)
+		mu.Lock()
+		armed := contains(allOutput, "armed")
+		mu.Unlock()
+		if armed {
+			break
+		}
+		select {
+		case <-deadline:
+			mu.Lock()
+			t.Fatalf("child never armed signal handling, got: %q", allOutput)
 			mu.Unlock()
 		default:
 		}

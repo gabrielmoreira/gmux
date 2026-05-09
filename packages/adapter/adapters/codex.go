@@ -13,12 +13,12 @@ import (
 
 // Compile-time interface checks.
 var (
-	_ adapter.Launchable         = (*Codex)(nil)
-	_ adapter.SessionFiler       = (*Codex)(nil)
-	_ adapter.SessionFileLister  = (*Codex)(nil)
-	_ adapter.FileMonitor        = (*Codex)(nil)
-	_ adapter.FileAttributor     = (*Codex)(nil)
-	_ adapter.Resumer            = (*Codex)(nil)
+	_ adapter.Launchable        = (*Codex)(nil)
+	_ adapter.SessionFiler      = (*Codex)(nil)
+	_ adapter.SessionFileLister = (*Codex)(nil)
+	_ adapter.FileMonitor       = (*Codex)(nil)
+	_ adapter.FileAttributor    = (*Codex)(nil)
+	_ adapter.Resumer           = (*Codex)(nil)
 )
 
 func init() {
@@ -42,7 +42,7 @@ func (c *Codex) Discover() bool {
 // Match returns true if any argument before "--" is the `codex` binary.
 func (c *Codex) Match(cmd []string) bool {
 	for _, arg := range cmd {
-		if filepath.Base(arg) == "codex" {
+		if normalizedExecutableName(arg) == "codex" {
 			return true
 		}
 		if arg == "--" {
@@ -164,8 +164,8 @@ func (c *Codex) ParseSessionFile(path string) (*adapter.SessionFileInfo, error) 
 		var entry struct {
 			Type    string `json:"type"`
 			Payload struct {
-				Type    string `json:"type"`
-				Role    string `json:"role"`
+				Type    string          `json:"type"`
+				Role    string          `json:"role"`
 				Content json.RawMessage `json:"content"`
 			} `json:"payload"`
 		}
@@ -287,7 +287,6 @@ func (c *Codex) AttributeFile(filePath string, candidates []adapter.FileCandidat
 func (c *Codex) ResumeCommand(info *adapter.SessionFileInfo) []string {
 	return []string{"codex", "resume", info.ID}
 }
-
 
 // CanResume checks if a session file has user messages worth resuming.
 func (c *Codex) CanResume(path string) bool {

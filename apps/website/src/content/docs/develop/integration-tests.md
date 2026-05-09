@@ -50,7 +50,7 @@ Launches an isolated gmuxd instance:
 - Random port (no conflicts with dev or other tests)
 - Temp socket directory
 - Empty `XDG_CONFIG_HOME` (no tailscale, no user config)
-- `PATH` includes the built `bin/gmux` binary
+- `PATH` includes the built `gmux` binary from `bin/` (for example `bin/gmux` on Unix or `bin/gmux.exe` on Windows)
 - Cleaned up automatically when the test ends
 
 ### `ConnectSession(sessionID)`

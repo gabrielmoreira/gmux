@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -16,15 +17,21 @@ import (
 
 // Compile-time interface checks.
 var (
-	_ adapter.Launchable      = (*Pi)(nil)
-	_ adapter.SessionFiler    = (*Pi)(nil)
-	_ adapter.FileMonitor     = (*Pi)(nil)
-	_ adapter.FileAttributor  = (*Pi)(nil)
-	_ adapter.Resumer         = (*Pi)(nil)
+	_ adapter.Launchable     = (*Pi)(nil)
+	_ adapter.SessionFiler   = (*Pi)(nil)
+	_ adapter.FileMonitor    = (*Pi)(nil)
+	_ adapter.FileAttributor = (*Pi)(nil)
+	_ adapter.Resumer        = (*Pi)(nil)
+
+	_ adapter.Launchable     = (*Omp)(nil)
+	_ adapter.SessionFiler   = (*Omp)(nil)
+	_ adapter.FileMonitor    = (*Omp)(nil)
+	_ adapter.FileAttributor = (*Omp)(nil)
+	_ adapter.Resumer        = (*Omp)(nil)
 )
 
 func init() {
-	All = append(All, NewPi())
+	All = append(All, NewPi(), NewOmp())
 }
 
 // Pi is the adapter for the pi coding agent.
@@ -32,9 +39,17 @@ func init() {
 // Implements SessionFiler, FileMonitor, and Resumer.
 type Pi struct{}
 
-func NewPi() *Pi { return &Pi{} }
+// Omp is the adapter for Oh My Pi sessions. It reuses the JSONL/session-file
+// behavior of Pi but stores data under .omp and uses a slightly different
+// per-cwd directory encoding on Windows when the cwd is inside $HOME.
+type Omp struct{ Pi }
+
+func NewPi() *Pi   { return &Pi{} }
+func NewOmp() *Omp { return &Omp{} }
 
 func (p *Pi) Name() string { return "pi" }
+
+func (p *Omp) Name() string { return "omp" }
 
 func (p *Pi) Discover() bool {
 	// Fast path: check if 'pi' binary exists on PATH without executing it.
@@ -43,11 +58,16 @@ func (p *Pi) Discover() bool {
 	return err == nil
 }
 
+func (p *Omp) Discover() bool {
+	_, err := exec.LookPath("omp")
+	return err == nil
+}
+
 // Match returns true if any argument in the command is the `pi` or
 // `pi-coding-agent` binary.
 func (p *Pi) Match(cmd []string) bool {
 	for _, arg := range cmd {
-		base := filepath.Base(arg)
+		base := normalizedExecutableName(arg)
 		if base == "pi" || base == "pi-coding-agent" {
 			return true
 		}
@@ -58,8 +78,31 @@ func (p *Pi) Match(cmd []string) bool {
 	return false
 }
 
+func (p *Omp) Match(cmd []string) bool {
+	for _, arg := range cmd {
+		base := normalizedExecutableName(arg)
+		if base == "omp" {
+			return true
+		}
+		if arg == "--" {
+			break
+		}
+	}
+	return false
+}
+
+func normalizedExecutableName(arg string) string {
+	base := filepath.Base(arg)
+	base = strings.TrimSuffix(base, filepath.Ext(base))
+	if runtime.GOOS == "windows" {
+		return strings.ToLower(base)
+	}
+	return base
+}
+
 // Env returns no extra environment variables.
-func (p *Pi) Env(_ adapter.EnvContext) []string { return nil }
+func (p *Pi) Env(_ adapter.EnvContext) []string  { return nil }
+func (p *Omp) Env(_ adapter.EnvContext) []string { return nil }
 
 func (p *Pi) Launchers() []adapter.Launcher {
 	return []adapter.Launcher{{
@@ -70,10 +113,23 @@ func (p *Pi) Launchers() []adapter.Launcher {
 	}}
 }
 
+func (p *Omp) Launchers() []adapter.Launcher {
+	return []adapter.Launcher{{
+		ID:          "omp",
+		Label:       "omp",
+		Command:     []string{"omp"},
+		Description: "Oh My Pi agent",
+	}}
+}
+
 // Monitor is a no-op for the pi adapter — status is driven by the
 // JSONL session file via FileMonitor.ParseNewLines instead of PTY output.
 // This avoids flicker from spinner redraws.
 func (p *Pi) Monitor(_ []byte) *adapter.Event {
+	return nil
+}
+
+func (p *Omp) Monitor(_ []byte) *adapter.Event {
 	return nil
 }
 
@@ -87,6 +143,9 @@ func (p *Pi) SessionRootDir() string {
 	if dir := os.Getenv("PI_CODING_AGENT_DIR"); dir != "" {
 		return filepath.Join(dir, "sessions")
 	}
+	if dir := os.Getenv("PI_DIR"); dir != "" {
+		return filepath.Join(dir, "sessions")
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
@@ -94,18 +153,66 @@ func (p *Pi) SessionRootDir() string {
 	return filepath.Join(home, ".pi", "agent", "sessions")
 }
 
+func (p *Omp) SessionRootDir() string {
+	for _, dir := range []string{
+		os.Getenv("OMP_AGENT_DIR"),
+		os.Getenv("OMP_DIR"),
+		os.Getenv("PI_CODING_AGENT_DIR"),
+	} {
+		if dir != "" {
+			return filepath.Join(dir, "sessions")
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".omp", "agent", "sessions")
+}
+
 // SessionDir returns pi's session directory for a given cwd.
-// Pi encodes: strip leading /, replace remaining / with -, wrap in --.
-// /home/mg/dev/gmux → --home-mg-dev-gmux--
 func (p *Pi) SessionDir(cwd string) string {
 	root := p.SessionRootDir()
 	if root == "" {
 		return ""
 	}
-	abs := paths.NormalizePath(cwd)
-	path := strings.TrimPrefix(abs, "/")
-	encoded := "--" + strings.ReplaceAll(path, "/", "-") + "--"
+	home, _ := os.UserHomeDir()
+	encoded := sessionDirName("pi", cwd, home)
 	return filepath.Join(root, encoded)
+}
+
+func (p *Omp) SessionDir(cwd string) string {
+	root := p.SessionRootDir()
+	if root == "" {
+		return ""
+	}
+	home, _ := os.UserHomeDir()
+	encoded := sessionDirName("omp", cwd, home)
+	return filepath.Join(root, encoded)
+}
+
+func sessionDirName(adapterID, cwd, home string) string {
+	abs := paths.NormalizePath(cwd)
+	home = paths.NormalizePath(home)
+	abs = strings.ReplaceAll(abs, "\\", "/")
+	home = strings.ReplaceAll(home, "\\", "/")
+
+	if adapterID == "omp" && home != "" {
+		if strings.EqualFold(abs, home) {
+			return "-"
+		}
+		prefix := home
+		if !strings.HasSuffix(prefix, "/") {
+			prefix += "/"
+		}
+		if strings.HasPrefix(strings.ToLower(abs), strings.ToLower(prefix)) {
+			rel := abs[len(prefix):]
+			return "-" + strings.ReplaceAll(rel, "/", "-")
+		}
+	}
+
+	path := strings.TrimPrefix(abs, "/")
+	return "--" + strings.ReplaceAll(path, "/", "-") + "--"
 }
 
 // ParseSessionFile reads a pi JSONL session file and returns display metadata.
@@ -290,7 +397,7 @@ func (p *Pi) ParseNewLines(lines []string, filePath string) []adapter.Event {
 							})
 						}
 					}
-				// Unknown stopReasons: no state change.
+					// Unknown stopReasons: no state change.
 				}
 			}
 		}
@@ -394,6 +501,10 @@ func countTrailingErrors(filePath string) (count int, cwd string) {
 // ResumeCommand returns the command to resume a pi session.
 func (p *Pi) ResumeCommand(info *adapter.SessionFileInfo) []string {
 	return []string{"pi", "--session", info.FilePath, "-c"}
+}
+
+func (p *Omp) ResumeCommand(info *adapter.SessionFileInfo) []string {
+	return []string{"omp", "--session", info.FilePath, "-c"}
 }
 
 // CanResume checks if a session file is valid and has content worth resuming.
@@ -566,7 +677,6 @@ func truncateTitle(s string, maxLen int) string {
 	}
 	return s[:cut] + "…"
 }
-
 
 var (
 	errEmpty      = &parseError{"empty file"}

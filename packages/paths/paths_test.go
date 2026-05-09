@@ -57,3 +57,45 @@ func TestCanonicalizePath(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionSocketDirUsesOverride(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("GMUX_SOCKET_DIR", dir)
+
+	if got := SessionSocketDir(); got != dir {
+		t.Fatalf("SessionSocketDir() = %q, want %q", got, dir)
+	}
+	if got := SessionSocketPath("sess-123"); got != filepath.Join(dir, "sess-123.sock") {
+		t.Fatalf("SessionSocketPath() = %q, want %q", got, filepath.Join(dir, "sess-123.sock"))
+	}
+}
+
+func TestSessionSocketDirUsesStableUnixDefault(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("windows uses the temp directory for session sockets")
+	}
+
+	t.Setenv("GMUX_SOCKET_DIR", "")
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "custom-tmp"))
+
+	want := filepath.Join("/tmp", "gmux-sessions")
+	if got := SessionSocketDir(); got != want {
+		t.Fatalf("SessionSocketDir() = %q, want %q", got, want)
+	}
+	if got := SessionSocketPath("sess-123"); got != filepath.Join(want, "sess-123.sock") {
+		t.Fatalf("SessionSocketPath() = %q, want %q", got, filepath.Join(want, "sess-123.sock"))
+	}
+}
+
+func TestSessionSocketDirUsesTempDirOnWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-only path assertion")
+	}
+
+	t.Setenv("GMUX_SOCKET_DIR", "")
+
+	want := filepath.Join(os.TempDir(), "gmux-sessions")
+	if got := SessionSocketDir(); got != want {
+		t.Fatalf("SessionSocketDir() = %q, want %q", got, want)
+	}
+}

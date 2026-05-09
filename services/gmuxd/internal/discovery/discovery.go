@@ -1,6 +1,6 @@
-// Package discovery scans /tmp/gmux-sessions/*.sock for live gmux-run
+// Package discovery scans the shared session socket directory for live gmux-run
 // instances and queries their GET /meta endpoint to populate the store.
-// Replaces the old file-polling approach from /tmp/gmux-meta/.
+// Replaces the old file-polling approach from the temp-backed gmux-meta directory.
 package discovery
 
 import (
@@ -17,6 +17,7 @@ import (
 
 	"github.com/gmuxapp/gmux/packages/adapter"
 	"github.com/gmuxapp/gmux/packages/adapter/adapters"
+	"github.com/gmuxapp/gmux/packages/paths"
 	"github.com/gmuxapp/gmux/services/gmuxd/internal/store"
 )
 
@@ -24,13 +25,6 @@ import (
 // would launch for new sessions. Set by main at startup. Exposed via
 // /v1/health as runner_hash so the frontend can detect dev-mode hash drift.
 var ExpectedRunnerHash string
-
-func socketDir() string {
-	if d := os.Getenv("GMUX_SOCKET_DIR"); d != "" {
-		return d
-	}
-	return "/tmp/gmux-sessions"
-}
 
 // OnDeadFunc is invoked after a session has just landed as Alive=false
 // in the store, with the post-Upsert snapshot. nil is allowed.
@@ -78,7 +72,7 @@ func Watch(sessions *store.Store, subs *Subscriptions, fileMon *FileMonitor, onD
 // Reachable sockets → upsert session + subscribe to /events.
 // Unreachable → remove + cleanup + unsubscribe.
 func Scan(sessions *store.Store, subs *Subscriptions, fileMon *FileMonitor, onDead OnDeadFunc) {
-	dir := socketDir()
+	dir := paths.SessionSocketDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if !os.IsNotExist(err) {

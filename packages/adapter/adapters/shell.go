@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -42,9 +43,9 @@ func FindByKind(kind string) adapter.Adapter {
 
 // Compile-time interface checks.
 var (
-	_ adapter.SessionFiler    = (*Shell)(nil)
-	_ adapter.Resumer         = (*Shell)(nil)
-	_ adapter.CommandTitler   = (*Shell)(nil)
+	_ adapter.SessionFiler     = (*Shell)(nil)
+	_ adapter.Resumer          = (*Shell)(nil)
+	_ adapter.CommandTitler    = (*Shell)(nil)
 	_ adapter.SessionRegistrar = (*Shell)(nil)
 	_ adapter.SessionFinalizer = (*Shell)(nil)
 )
@@ -75,6 +76,20 @@ func (g *Shell) CommandTitle(command []string) string {
 }
 
 func (g *Shell) Launchers() []adapter.Launcher {
+	if runtime.GOOS == "windows" {
+		return []adapter.Launcher{
+			{ID: "shell", Label: "Shell", Command: nil, Description: "System Default Shell"},
+			{ID: "pwsh", Label: "PowerShell 7", Command: []string{"pwsh"}, Description: "PowerShell Core"},
+			{ID: "powershell", Label: "PowerShell 5", Command: []string{"powershell"}, Description: "Windows PowerShell"},
+			{ID: "cmd", Label: "cmd.exe", Command: []string{"cmd"}, Description: "Command Prompt"},
+			{ID: "wsl", Label: "WSL", Command: []string{"wsl"}, Description: "Subsystem for Linux"},
+			{ID: "git-bash", Label: "Git Bash", Command: []string{"bash"}, Description: "Git Bash"},
+			{ID: "codex", Label: "Codex", Command: []string{"codex"}, Description: "OpenAI Codex CLI"},
+			{ID: "copilot", Label: "GitHub Copilot", Command: []string{"copilot"}, Description: "GitHub Copilot CLI"},
+			{ID: "gemini", Label: "Gemini", Command: []string{"gemini"}, Description: "Google Gemini CLI"},
+		}
+	}
+
 	return []adapter.Launcher{{
 		ID:          "shell",
 		Label:       "Shell",
@@ -149,6 +164,12 @@ func (g *Shell) ResumeCommand(info *adapter.SessionFileInfo) []string {
 	// Resume a shell session by launching the user's default shell in the
 	// original cwd. The cwd is passed via the session metadata, not the
 	// command itself.
+	if runtime.GOOS == "windows" {
+		if comspec := os.Getenv("COMSPEC"); comspec != "" {
+			return []string{comspec}
+		}
+		return []string{"cmd"}
+	}
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/sh"

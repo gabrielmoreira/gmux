@@ -8,17 +8,26 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/gmuxapp/gmux/packages/paths"
 )
 
-// startTestSocketDaemon starts a minimal gmuxd on a Unix socket
-// at the standard SocketPath() location under a temp XDG_STATE_HOME.
-// Returns the state dir (for t.Setenv) and a cleanup func.
-func startTestSocketDaemon(t *testing.T, ver string) (stateDir string, cleanup func()) {
+func setTestStateEnv(t *testing.T) string {
 	t.Helper()
-	stateDir = t.TempDir()
-	sockDir := filepath.Join(stateDir, "gmux")
-	os.MkdirAll(sockDir, 0o700)
-	sockPath := filepath.Join(sockDir, "gmuxd.sock")
+	stateRoot := t.TempDir()
+	t.Setenv("LOCALAPPDATA", stateRoot)
+	t.Setenv("XDG_STATE_HOME", stateRoot)
+	return stateRoot
+}
+
+// startTestSocketDaemon starts a minimal gmuxd on the standard test socket path.
+func startTestSocketDaemon(t *testing.T, ver string) (cleanup func()) {
+	t.Helper()
+	setTestStateEnv(t)
+	sockPath := paths.SocketPath()
+	if err := os.MkdirAll(filepath.Dir(sockPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	ln, err := net.Listen("unix", sockPath)
 	if err != nil {
 		t.Fatal(err)
@@ -40,7 +49,7 @@ func startTestSocketDaemon(t *testing.T, ver string) (stateDir string, cleanup f
 	go srv.Serve(ln)
 	time.Sleep(50 * time.Millisecond)
 
-	return stateDir, func() {
+	return func() {
 		srv.Close()
 		os.Remove(sockPath)
 	}
@@ -51,7 +60,7 @@ func TestGmuxdNeedsStart_NotRunning(t *testing.T) {
 	version = "0.4.4"
 	defer func() { version = old }()
 
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	setTestStateEnv(t)
 
 	if !gmuxdNeedsStart() {
 		t.Error("expected true when daemon is unreachable")
@@ -63,9 +72,8 @@ func TestGmuxdNeedsStart_SameVersion(t *testing.T) {
 	version = "0.4.4"
 	defer func() { version = old }()
 
-	stateDir, cleanup := startTestSocketDaemon(t, "0.4.4")
+	cleanup := startTestSocketDaemon(t, "0.4.4")
 	defer cleanup()
-	t.Setenv("XDG_STATE_HOME", stateDir)
 
 	if gmuxdNeedsStart() {
 		t.Error("expected false when versions match")
@@ -77,9 +85,8 @@ func TestGmuxdNeedsStart_OlderVersion(t *testing.T) {
 	version = "0.4.4"
 	defer func() { version = old }()
 
-	stateDir, cleanup := startTestSocketDaemon(t, "0.4.3")
+	cleanup := startTestSocketDaemon(t, "0.4.3")
 	defer cleanup()
-	t.Setenv("XDG_STATE_HOME", stateDir)
 
 	if !gmuxdNeedsStart() {
 		t.Error("expected true when daemon is older")
@@ -91,9 +98,8 @@ func TestGmuxdNeedsStart_NewerVersion(t *testing.T) {
 	version = "0.4.3"
 	defer func() { version = old }()
 
-	stateDir, cleanup := startTestSocketDaemon(t, "0.4.4")
+	cleanup := startTestSocketDaemon(t, "0.4.4")
 	defer cleanup()
-	t.Setenv("XDG_STATE_HOME", stateDir)
 
 	if !gmuxdNeedsStart() {
 		t.Error("expected true when versions differ")
@@ -105,9 +111,8 @@ func TestGmuxdNeedsStart_DevNeverReplaces(t *testing.T) {
 	version = "dev"
 	defer func() { version = old }()
 
-	stateDir, cleanup := startTestSocketDaemon(t, "0.4.3")
+	cleanup := startTestSocketDaemon(t, "0.4.3")
 	defer cleanup()
-	t.Setenv("XDG_STATE_HOME", stateDir)
 
 	if gmuxdNeedsStart() {
 		t.Error("dev builds must not replace a healthy daemon")
@@ -119,7 +124,7 @@ func TestGmuxdNeedsStart_DevStartsWhenNotRunning(t *testing.T) {
 	version = "dev"
 	defer func() { version = old }()
 
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	setTestStateEnv(t)
 
 	if !gmuxdNeedsStart() {
 		t.Error("expected true for dev build when daemon is not running")
@@ -137,5 +142,54 @@ func TestParseHealthField(t *testing.T) {
 	}
 	if got := parseHealthField(body, "nonexistent"); got != "" {
 		t.Errorf("nonexistent = %q, want empty", got)
+	}
+}
+
+func TestResolveBundledBinaryFindsRepoBin(t *testing.T) {
+	repoRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repoRoot, "go.work"), []byte("go 1.26\n"), 0o644); err != nil {
+		t.Fatalf("write go.work: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(repoRoot, "cli", "gmux"), 0o755); err != nil {
+		t.Fatalf("mkdir exe dir: %v", err)
+	}
+	want := filepath.Join(repoRoot, "bin", binaryFileName("gmuxd"))
+	if err := os.MkdirAll(filepath.Dir(want), 0o755); err != nil {
+		t.Fatalf("mkdir bin dir: %v", err)
+	}
+	if err := os.WriteFile(want, []byte("binary"), 0o644); err != nil {
+		t.Fatalf("write gmuxd binary: %v", err)
+	}
+
+	self := filepath.Join(repoRoot, "cli", "gmux", binaryFileName("gmux"))
+	if got := resolveBundledBinary(self, "gmuxd"); got != want {
+		t.Fatalf("resolveBundledBinary() = %q, want %q", got, want)
+	}
+}
+
+func TestResolveBundledBinaryPrefersSibling(t *testing.T) {
+	repoRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repoRoot, "go.work"), []byte("go 1.26\n"), 0o644); err != nil {
+		t.Fatalf("write go.work: %v", err)
+	}
+	exeDir := filepath.Join(repoRoot, "custom-bin")
+	if err := os.MkdirAll(exeDir, 0o755); err != nil {
+		t.Fatalf("mkdir exe dir: %v", err)
+	}
+	repoBin := filepath.Join(repoRoot, "bin", binaryFileName("gmuxd"))
+	if err := os.MkdirAll(filepath.Dir(repoBin), 0o755); err != nil {
+		t.Fatalf("mkdir repo bin dir: %v", err)
+	}
+	sibling := filepath.Join(exeDir, binaryFileName("gmuxd"))
+	if err := os.WriteFile(sibling, []byte("sibling"), 0o644); err != nil {
+		t.Fatalf("write sibling binary: %v", err)
+	}
+	if err := os.WriteFile(repoBin, []byte("repo-bin"), 0o644); err != nil {
+		t.Fatalf("write repo binary: %v", err)
+	}
+
+	self := filepath.Join(exeDir, binaryFileName("gmux"))
+	if got := resolveBundledBinary(self, "gmuxd"); got != sibling {
+		t.Fatalf("resolveBundledBinary() = %q, want sibling %q", got, sibling)
 	}
 }

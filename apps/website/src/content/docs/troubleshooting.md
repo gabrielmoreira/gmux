@@ -59,6 +59,9 @@ The clipboard API requires a secure context: either `localhost`, `127.0.0.1`, or
 
 See the [Remote Access troubleshooting section](/remote-access/#troubleshooting) for Tailscale-specific issues (device not appearing, certificate warnings, hostname resolution).
 
+- Native Windows support is initial. The primary tested path is Windows Terminal with PowerShell 7 or Windows PowerShell.
+- Git Bash, WSL, and third-party CLI launchers only appear when their commands are installed, and they are still best-effort because behavior depends on the shell/tool you launch.
+- Third-party agent CLIs keep their own platform limits. If a tool only partially supports Windows, gmux cannot fully hide that.
 ## Updating
 
 It's safe to update gmux while sessions are running; they reconnect automatically. gmux checks for new releases in the background and notifies you in the dashboard sidebar and when you run `gmux` with no arguments.

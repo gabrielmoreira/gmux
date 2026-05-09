@@ -174,6 +174,8 @@ interface Status {
 ### How Children Set Status
 
 **Option A — Environment variable + HTTP** (preferred):
+Example shown on Unix. On Windows, the default socket lives under the temp directory returned by Go (`os.TempDir()`), typically `%TEMP%\gmux-sessions\...`, unless `GMUX_SOCKET_DIR` is set.
+
 ```bash
 # gmux sets this in the child's environment
 GMUX_SOCKET=/tmp/gmux-sessions/sess-abc123.sock

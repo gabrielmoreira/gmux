@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -54,7 +55,7 @@ type LaunchConfig struct {
 }
 
 // discoverLaunchers derives launchers from the compiled adapter set and keeps
-// only the adapters that are available on this machine.
+// only the launchers whose adapter and command are available on this machine.
 func discoverLaunchers() LaunchConfig {
 	adapterList := append([]adapter.Adapter{}, adapters.All...)
 	adapterList = append(adapterList, adapters.DefaultFallback())
@@ -103,7 +104,7 @@ func launchersForAdapters(adapterList []adapter.Adapter, availableByName map[str
 			if _, ok := seen[l.ID]; ok {
 				continue
 			}
-			if !availableByName[a.Name()] {
+			if !availableByName[a.Name()] || !launcherCommandAvailable(l) {
 				continue
 			}
 			seen[l.ID] = struct{}{}
@@ -115,20 +116,71 @@ func launchersForAdapters(adapterList []adapter.Adapter, availableByName map[str
 	return launchers
 }
 
+func launcherCommandAvailable(l adapter.Launcher) bool {
+	if len(l.Command) == 0 {
+		return true
+	}
+	_, err := exec.LookPath(l.Command[0])
+	return err == nil
+}
+
 // resolveGmux finds the gmux binary.
-// Priority: sibling to this binary > PATH lookup.
-// Both gmuxd and gmux are always installed to the same directory.
+// Priority: sibling to this binary > repo bin/ for source-tree builds > PATH lookup.
 func resolveGmux() string {
 	if exe, err := os.Executable(); err == nil {
-		sibling := filepath.Join(filepath.Dir(exe), "gmux")
-		if _, err := os.Stat(sibling); err == nil {
-			return sibling
+		if path := resolveBundledBinary(exe, "gmux"); path != "" {
+			return path
 		}
 	}
 	if p, err := exec.LookPath("gmux"); err == nil {
 		return p
 	}
+	if binaryFileName("gmux") != "gmux" {
+		if p, err := exec.LookPath(binaryFileName("gmux")); err == nil {
+			return p
+		}
+	}
 	return ""
+}
+
+func resolveBundledBinary(selfPath, name string) string {
+	fileName := binaryFileName(name)
+
+	exeDir := filepath.Dir(selfPath)
+	if sibling := filepath.Join(exeDir, fileName); fileExists(sibling) {
+		return sibling
+	}
+
+	for dir := exeDir; ; dir = filepath.Dir(dir) {
+		if fileExists(filepath.Join(dir, "go.work")) {
+			repoBin := filepath.Join(dir, "bin", fileName)
+			if fileExists(repoBin) {
+				return repoBin
+			}
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+	}
+
+	return ""
+}
+
+func binaryFileName(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
+}
+
+func fileExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func launcherStates(ls []adapter.Launcher) []string {
@@ -174,7 +226,7 @@ func filterEnvPrefix(env []string, prefix string) []string {
 func launchGmux(gmuxBin string, command []string, cwd, resumeID string) (int, error) {
 	cmd := exec.Command(gmuxBin, command...)
 	cmd.Dir = cwd
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.SysProcAttr = sysProcAttr()
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil
@@ -217,8 +269,6 @@ Tip:
   More help: https://gmux.app
 `, version)
 }
-
-
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
@@ -478,7 +528,7 @@ func serve(stderr io.Writer) int {
 	go fileMon.Run(stopFileMon)
 	defer close(stopFileMon)
 
-	// Start socket-based discovery (scans /tmp/gmux-sessions/*.sock)
+	// Start socket-based discovery (scans the shared session socket directory).
 	// Discovery also subscribes to each runner's /events SSE for live updates.
 	stopDiscovery := make(chan struct{})
 	go discovery.Watch(sessions, subs, fileMon, persistDead, fileMon.ApplyPersistedAttributions, 3*time.Second, stopDiscovery)
@@ -1006,18 +1056,17 @@ func serve(stderr io.Writer) int {
 			}
 		}
 
-		// Empty/nil command means "shell" — use user's $SHELL
+		// Empty/nil command means "shell" — use user's default shell
 		if len(req.Command) == 0 {
-			shell := os.Getenv("SHELL")
-			if shell == "" {
-				shell = "/bin/sh"
-			}
-			req.Command = []string{shell}
+			req.Command = []string{defaultShell()}
 		}
 
 		cwd := req.Cwd
 		if cwd == "" {
-			cwd = os.Getenv("HOME")
+			home, err := os.UserHomeDir()
+			if err == nil {
+				cwd = home
+			}
 		}
 		// Expand ~ to absolute path for exec.Command.Dir.
 		cwd = projects.NormalizePath(cwd)
@@ -1930,5 +1979,3 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 		"error": map[string]any{"code": code, "message": message},
 	})
 }
-
-

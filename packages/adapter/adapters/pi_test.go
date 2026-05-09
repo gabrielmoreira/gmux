@@ -3,6 +3,7 @@ package adapters
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -37,6 +38,22 @@ func TestPiMatchWrapped(t *testing.T) {
 	}
 	if !p.Match([]string{"/home/user/.local/bin/pi"}) {
 		t.Fatal("should match full path")
+	}
+}
+
+func TestAgentAdapterMatchIsCaseInsensitiveOnWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-only command matching")
+	}
+
+	if !NewPi().Match([]string{"PI.EXE"}) {
+		t.Fatal("should match upper-case pi.exe on Windows")
+	}
+	if !NewPi().Match([]string{`C:\\Tools\\Pi-Coding-Agent.EXE`}) {
+		t.Fatal("should match mixed-case pi-coding-agent.exe on Windows")
+	}
+	if !NewOmp().Match([]string{"OMP.EXE"}) {
+		t.Fatal("should match upper-case omp.exe on Windows")
 	}
 }
 
@@ -582,10 +599,72 @@ func TestCanResume(t *testing.T) {
 // --- Helpers ---
 
 func TestSessionDirEncoding(t *testing.T) {
-	dir := NewPi().SessionDir("/home/mg/dev/gmux")
-	if base := filepath.Base(dir); base != "--home-mg-dev-gmux--" {
-		t.Errorf("expected --home-mg-dev-gmux--, got %s", base)
+	tests := []struct {
+		name    string
+		adapter string
+		cwd     string
+		home    string
+		want    string
+	}{
+		{
+			name:    "pi unix path",
+			adapter: "pi",
+			cwd:     "/home/mg/dev/gmux",
+			home:    "/home/mg",
+			want:    "--home-mg-dev-gmux--",
+		},
+		{
+			name:    "pi windows path",
+			adapter: "pi",
+			cwd:     `C:\Users\TestUser\Code\project-a`,
+			home:    `C:\Users\TestUser`,
+			want:    "--C--Users-TestUser-Code-project-a--",
+		},
+		{
+			name:    "omp home-relative windows path",
+			adapter: "omp",
+			cwd:     `C:\Users\TestUser\Code\project-b`,
+			home:    `C:\Users\TestUser`,
+			want:    "-Code-project-b",
+		},
+		{
+			name:    "omp home-root windows path",
+			adapter: "omp",
+			cwd:     `C:\Users\TestUser`,
+			home:    `C:\Users\TestUser`,
+			want:    "-",
+		},
+		{
+			name:    "pi unix root path",
+			adapter: "pi",
+			cwd:     "/",
+			home:    "/home/mg",
+			want:    "----",
+		},
+		{
+			name:    "omp outside-home windows path",
+			adapter: "omp",
+			cwd:     `C:\work\external-project`,
+			home:    `C:\Users\TestUser`,
+			want:    "--C--work-external-project--",
+		},
 	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := sessionDirName(tt.adapter, tt.cwd, tt.home); got != tt.want {
+				t.Fatalf("sessionDirName(%q, %q, %q) = %q, want %q", tt.adapter, tt.cwd, tt.home, got, tt.want)
+			}
+		})
+	}
+}
+
+func setTempHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	return home
 }
 
 func TestSessionRootDirRespectsEnvVar(t *testing.T) {
@@ -599,10 +678,62 @@ func TestSessionRootDirRespectsEnvVar(t *testing.T) {
 }
 
 func TestSessionRootDirDefaultWithoutEnvVar(t *testing.T) {
+	home := setTempHome(t)
 	t.Setenv("PI_CODING_AGENT_DIR", "")
+	t.Setenv("PI_DIR", "")
 	root := NewPi().SessionRootDir()
-	home, _ := os.UserHomeDir()
 	want := filepath.Join(home, ".pi", "agent", "sessions")
+	if root != want {
+		t.Errorf("expected %s, got %s", want, root)
+	}
+}
+
+func TestOmpSessionRootDirRespectsEnvVar(t *testing.T) {
+	custom := t.TempDir()
+	t.Setenv("PI_CODING_AGENT_DIR", "")
+	t.Setenv("OMP_AGENT_DIR", custom)
+	t.Setenv("OMP_DIR", "")
+	root := NewOmp().SessionRootDir()
+	want := filepath.Join(custom, "sessions")
+	if root != want {
+		t.Errorf("expected %s, got %s", want, root)
+	}
+}
+
+func TestOmpSessionRootDirPrefersOmpEnvOverPiCompatEnv(t *testing.T) {
+	piCompat := t.TempDir()
+	ompSpecific := t.TempDir()
+	t.Setenv("PI_CODING_AGENT_DIR", piCompat)
+	t.Setenv("OMP_AGENT_DIR", ompSpecific)
+	t.Setenv("OMP_DIR", "")
+
+	root := NewOmp().SessionRootDir()
+	want := filepath.Join(ompSpecific, "sessions")
+	if root != want {
+		t.Errorf("expected %s, got %s", want, root)
+	}
+}
+
+func TestOmpSessionRootDirFallsBackToPiCompatEnv(t *testing.T) {
+	compat := t.TempDir()
+	t.Setenv("PI_CODING_AGENT_DIR", compat)
+	t.Setenv("OMP_AGENT_DIR", "")
+	t.Setenv("OMP_DIR", "")
+
+	root := NewOmp().SessionRootDir()
+	want := filepath.Join(compat, "sessions")
+	if root != want {
+		t.Errorf("expected %s, got %s", want, root)
+	}
+}
+
+func TestOmpSessionRootDirDefaultWithoutEnvVar(t *testing.T) {
+	home := setTempHome(t)
+	t.Setenv("PI_CODING_AGENT_DIR", "")
+	t.Setenv("OMP_AGENT_DIR", "")
+	t.Setenv("OMP_DIR", "")
+	root := NewOmp().SessionRootDir()
+	want := filepath.Join(home, ".omp", "agent", "sessions")
 	if root != want {
 		t.Errorf("expected %s, got %s", want, root)
 	}

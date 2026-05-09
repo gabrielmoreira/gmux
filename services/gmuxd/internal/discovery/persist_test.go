@@ -67,8 +67,7 @@ func TestLoadAttributionsReturnsNilForBadJSON(t *testing.T) {
 // directly. This means the file's title and Slug are restored
 // without needing scrollback-based matching.
 func TestPreSeededAttributionSkipsScrollback(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t)
 
 	cwd := "/home/user/dev/project"
 	pi := adapters.NewPi()

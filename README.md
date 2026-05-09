@@ -8,11 +8,19 @@ No Electron, no desktop app. Just a browser and two small binaries.
 
 ## Install
 
+macOS:
+
 ```bash
 brew install gmuxapp/tap/gmux
 ```
 
-Or download from [GitHub Releases](https://github.com/gmuxapp/gmux/releases).
+Linux:
+
+```bash
+curl -sSfL https://gmux.app/install.sh | sh
+```
+
+Windows (initial native support): download the latest Windows release archive from [GitHub Releases](https://github.com/gmuxapp/gmux/releases), extract `gmux.exe` and `gmuxd.exe`, and keep both binaries in the same directory on `PATH`. WSL is optional, not required.
 
 ## Quick start
 
@@ -26,6 +34,8 @@ gmux                       # open the UI
 Open `localhost:8790` — all three sessions are there, grouped by project, with live status indicators. Click one to attach a full terminal. The same xterm.js that powers the VS Code terminal, running in your browser.
 
 The daemon (`gmuxd`) starts automatically on first use. There's nothing else to set up. For daemon commands, run `gmuxd -h`.
+
+Windows support is initial. The primary tested path is Windows Terminal with PowerShell 7 or Windows PowerShell. Optional launchers such as Git Bash, WSL, Codex, Copilot, and Gemini only appear when their commands are installed, and their behavior still depends on the launched shell/tool.
 
 ## How it works
 

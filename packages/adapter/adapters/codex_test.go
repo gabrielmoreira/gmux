@@ -3,6 +3,7 @@ package adapters
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/gmuxapp/gmux/packages/adapter"
@@ -30,6 +31,19 @@ func TestCodexMatchFullPath(t *testing.T) {
 	}
 	if !c.Match([]string{"/home/user/.local/bin/codex"}) {
 		t.Fatal("should match ~/.local/bin path")
+	}
+}
+
+func TestCodexMatchIgnoresCaseAndExeOnWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-only command matching")
+	}
+
+	if !NewCodex().Match([]string{"CODEX.EXE"}) {
+		t.Fatal("should match upper-case codex.exe on Windows")
+	}
+	if !NewCodex().Match([]string{`C:\\Tools\\Codex.exe`}) {
+		t.Fatal("should match mixed-case full path on Windows")
 	}
 }
 

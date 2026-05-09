@@ -21,7 +21,7 @@ One per session. It:
 
 One per machine. It:
 
-- Discovers live runner sockets (`/tmp/gmux-sessions/*.sock`)
+- Discovers live runner sockets in the shared session socket directory (`/tmp/gmux-sessions/*.sock` on Unix, the Windows temp directory on Windows — typically `%TEMP%\gmux-sessions\*.sock`)
 - Subscribes to runner events for live updates
 - Watches adapter session files (e.g. pi's JSONL conversations)
 - Serves the REST API, SSE event stream, and WebSocket proxy
